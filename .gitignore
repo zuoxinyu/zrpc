@@ -1,0 +1,5 @@
+build/
+cppack/
+.clangd
+.cache
+compile_commands.json
