@@ -6,7 +6,7 @@ int main()
 {
     zrpc::Client cli;
     auto b = cli.call<bool>("test_method", 1, std::string("string"));
-    spdlog::info("test_method returns [{}]", b);
+    spdlog::info("test_method: {}", b);
 
     std::string hello = "hello, ";
     std::string world = "world";
@@ -20,4 +20,7 @@ int main()
 
     int a = cli.call<int>("foo.add1", 2);
     spdlog::info("foo.add1: {}", a);
+
+    int r = cli.call<int>("bar.virtual_method");
+    spdlog::info("bar.virtual_method: {}", r);
 }

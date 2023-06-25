@@ -1,3 +1,5 @@
+#ifndef _ZRPC_HPP_
+#define _ZRPC_HPP_
 #include <atomic>
 #include <functional>
 #include <map>
@@ -125,6 +127,9 @@ class Server {
   public:
     using DispatcherFn = std::function<const zmq::message_t(const zmq::message_t& msg)>;
     using Dispatcher = std::map<std::string, DispatcherFn>;
+    using DispatcherAsyncFn = std::pair<std::function<void(const zmq::message_t& msg)>,
+                                        std::function<void(const zmq::message_t& msg)>>;
+    using AsyncDispatch = std::map<std::string, DispatcherAsyncFn>;
 
     Server(const std::string& endpoint = kEndpoint)
     {
@@ -167,14 +172,14 @@ class Server {
     //   - parameter types: only types defined in msgpack
     //   - generic function must be explicity initiated
     template <typename Fn>
-    void register_method(const char* method, Fn fn)
+    inline void register_method(const char* method, Fn fn)
     {
         // constexpr map?
         routes_[method] = [this, method, fn](const auto& msg) { return proxy_call(fn, msg); };
     }
 
     template <typename Fn, typename Class>
-    void register_method(const char* method, Class* that, Fn fn)
+    inline void register_method(const char* method, Class* that, Fn fn)
     {
         routes_[method] = [this, that, method, fn](const auto& msg) {
             return proxy_call(fn, that, msg);
@@ -196,10 +201,10 @@ class Server {
     template <typename Fn>
     [[nodiscard]] auto proxy_call(Fn fn, const zmq::message_t& msg) -> const zmq::message_t
     {
-        using args_tuple_t = typename zrpc::fn_trait<Fn>::tuple_type;
+        using ArgsTuple = typename zrpc::fn_trait<Fn>::tuple_type;
 
         std::string method;
-        args_tuple_t args;
+        ArgsTuple args;
         zmq::message_t resp;
 
         // deserialize args
@@ -231,10 +236,10 @@ class Server {
     [[nodiscard]] auto proxy_call(Fn fn, Class* that, const zmq::message_t& msg)
         -> const zmq::message_t
     {
-        using args_tuple_t = typename zrpc::fn_trait<Fn>::tuple_type;
+        using ArgsTuple = typename zrpc::fn_trait<Fn>::tuple_type;
 
         std::string method;
-        args_tuple_t args;
+        ArgsTuple args;
         zmq::message_t resp;
 
         // deserialize args
@@ -265,18 +270,29 @@ class Server {
     }
 
   private:
-    // immutable resources
+    // (logically) immutable resources
     zmq::context_t ctx_;
+    // socket for RPC calls
     zmq::socket_t sock_{ctx_, zmq::socket_type::rep};
+    // socket for async RPC calls
+    zmq::socket_t async_sock_{ctx_, zmq::socket_type::pub};
+    // socket for publishing events
+    zmq::socket_t pub_{ctx_, zmq::socket_type::pub};
+
+    // init once resources
+    Dispatcher routes_;
 
     // mutable states
-    Dispatcher routes_;
     std::atomic<bool> stop_{false};
 };
 
 template <typename SerdeT = Serde>
 class Client {
   public:
+    using Event = std::string;
+    using EventHandler = std::function<void(Event)>;
+    using EventDispatcher = std::map<Event, EventHandler>;
+
     Client(const std::string& endpoint = kEndpoint)
     {
         sock_.connect(endpoint);
@@ -291,7 +307,7 @@ class Client {
     // requires:
     //   - must specify return type via `call<int>()` / `call<std::string>()` etc.
     template <typename ReturnType = void, typename... Args>
-    auto call(const std::string& method, Args... args) -> ReturnType
+    auto call(const char* method, Args... args) -> ReturnType
     {
         zmq::message_t req, resp;
 
@@ -312,9 +328,38 @@ class Client {
         }
     }
 
+    // register an event, thread safety?
+    inline auto register_event(const Event& event, EventHandler handler)
+    {
+        events_map_[event] = handler;
+    }
+
   private:
+    // thread for handling async results and server events
+    void async_thread()
+    {
+        while (!stop_) {
+            zmq::message_t msg;
+            auto recv_result = sub_.recv(msg, zmq::recv_flags::none);
+        }
+    }
+
+  private:
+    // (logically) immutable resources
     zmq::context_t ctx_;
+    // socket for sync RPC calls
     zmq::socket_t sock_{ctx_, zmq::socket_type::req};
+    // socket for async RPC calls
+    zmq::socket_t async_sock_{ctx_, zmq::socket_type::sub};
+    // socket for subscribing events
+    zmq::socket_t sub_{ctx_, zmq::socket_type::sub};
+
+    // init once resources
+    EventDispatcher events_map_;
+
+    // mutable states
+    std::atomic<bool> stop_{false};
 };
 
 }   // namespace zrpc
+#endif   // #ifndef _ZRPC_HPP_
