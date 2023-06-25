@@ -24,6 +24,11 @@ T generic_add(T x, T y)
     return x + y;
 }
 
+void pointer_args_fn(int* m)
+{
+    spdlog::info("fn with pointer arg should not be registered");
+}
+
 struct Foo {
     int add1(int x)
     {
@@ -60,6 +65,7 @@ int main()
     svr.register_method("add_integer", generic_add<int>);
     svr.register_method("foo.add1", &foo, &Foo::add1);
     svr.register_method("bar.virtual_method", static_cast<Foo*>(&bar), &Foo::virtual_method);
+    // svr.register_method("pointer_args_fn", pointer_args_fn);
 
     svr.serve();
     return 0;

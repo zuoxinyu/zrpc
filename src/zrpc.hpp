@@ -55,6 +55,25 @@ struct is_serializable_type {
     static constexpr bool value = true;
 };
 
+template <typename T>
+constexpr bool is_pointer_type()
+{
+    return std::is_pointer_v<remove_cvref_t<T>>;
+}
+
+template <typename T>
+struct any_pointer_type {
+    static constexpr bool value = is_pointer_type<T>();
+};
+
+template <typename... Args>
+struct any_pointer_type<std::tuple<Args...>> {
+    static constexpr bool value = (is_pointer_type<Args>() or ...);
+};
+
+static_assert(any_pointer_type<std::tuple<int*, float>>::value);
+static_assert(!any_pointer_type<std::tuple<int, float>>::value);
+
 }   // namespace detail
 
 enum class RPCError {
@@ -180,6 +199,7 @@ class Server {
     inline void register_method(const char* method, Fn fn)
     {
         static_assert(detail::is_serializable_type<typename fn_trait<Fn>::return_type>::value);
+        static_assert(!detail::any_pointer_type<typename fn_trait<Fn>::tuple_type>::value);
         // static_assert(detail::is_serializable_type<typename fn_trait<Fn>::args_type>::value);
         // constexpr map?
         routes_[method] = [this, method, fn](const auto& msg) { return proxy_call(fn, msg); };
@@ -345,12 +365,12 @@ class Client {
     // register an event, thread safety?
     inline auto register_event(const Event& event, EventHandler handler)
     {
-        events_map_[event] = handler;
+        events_map_[event] = std::move(handler);
     }
 
   private:
     // thread for handling async results and server events
-    void async_thread()
+    void poll_thread()
     {
         while (!stop_) {
             zmq::message_t msg;
