@@ -50,6 +50,40 @@ struct fn_trait_args {
 
 }   // namespace detail
 
+enum class RPCError {
+    kNoError = 0,
+    kBadMethod,
+    kSerdeFailed,
+};
+
+struct RPCErrorCategory : public std::error_category {
+    const char* name() const noexcept override { return "zrpc"; }
+
+    std::string message(int ec) const override
+    {
+        switch (static_cast<zrpc::RPCError>(ec)) {
+        case RPCError::kNoError: return "(no error)"; break;
+        case RPCError::kBadMethod: return "bad request"; break;
+        case RPCError::kSerdeFailed: return "bad payload"; break;
+        default: return "(unrecognized error)";
+        }
+    }
+};
+
+const RPCErrorCategory theRPCErrorCategory{};
+
+inline std::error_code make_error_code(zrpc::RPCError e)
+{
+    return {static_cast<int>(e), theRPCErrorCategory};
+}
+}   // namespace zrpc
+
+namespace std {
+template <>
+struct is_error_code_enum<zrpc::RPCError> : public true_type {};
+}   // namespace std
+
+namespace zrpc {
 static const std::string kEndpoint = "tcp://127.0.0.1:5555";
 using detail::fn_trait;
 
@@ -85,6 +119,7 @@ struct Serde {
     }
 };
 
+// calling convention:
 template <typename SerdeT = Serde>
 class Server {
   public:
@@ -112,9 +147,7 @@ class Server {
             std::string method;
             std::error_code ec = SerdeT::deserialize(req, method);
             if (ec) {
-                spdlog::error("bad request: failed to deserialize method: {}", ec.message());
-                sock_.send(req, zmq::send_flags::none);
-                continue;
+                // TODO
             }
 
             auto resp = call(method.c_str(), req);
@@ -183,7 +216,7 @@ class Server {
             if constexpr (!std::is_void_v<typename fn_trait<Fn>::return_type>) {
                 auto ret = std::apply(fn, args);
                 spdlog::trace("invoke {}{} -> {}", method, args, ret);
-                auto ec = Serde::serialize(resp, ret);
+                auto ec = Serde::serialize(resp, /*RPCError::kNoError*/ ret);
                 if (ec) {
                     // TODO
                 }
@@ -206,7 +239,7 @@ class Server {
 
         // deserialize args
         {
-            auto de = [&](auto&... xs) { return Serde::deserialize(msg, method, xs...); };
+            auto de = [&](auto&... xs) { return SerdeT::deserialize(msg, method, xs...); };
             auto ec = std::apply(de, args);
             if (ec) {
                 // TODO
@@ -220,7 +253,7 @@ class Server {
                 auto ret = std::apply(bound_fn, args);
 
                 spdlog::trace("invoke {}{} -> {}", method, args, ret);
-                auto ec = Serde::serialize(resp, ret);
+                auto ec = SerdeT::serialize(resp, ret);
                 if (ec) {
                     // TODO
                 }
@@ -252,6 +285,9 @@ class Client {
 
     Client(Client&) = delete;
 
+    // calling convention:
+    // request: [method, args...]
+    // response: [error_code, return value]
     // requires:
     //   - must specify return type via `call<int>()` / `call<std::string>()` etc.
     template <typename ReturnType = void, typename... Args>
