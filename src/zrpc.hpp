@@ -50,6 +50,11 @@ struct fn_trait_args {
     using args_type = typename std::tuple_element<0, typename fn_trait<Fn>::tuple_type>::type;
 };
 
+template <typename T>
+struct is_serializable_type {
+    static constexpr bool value = true;
+};
+
 }   // namespace detail
 
 enum class RPCError {
@@ -174,6 +179,8 @@ class Server {
     template <typename Fn>
     inline void register_method(const char* method, Fn fn)
     {
+        static_assert(detail::is_serializable_type<typename fn_trait<Fn>::return_type>::value);
+        // static_assert(detail::is_serializable_type<typename fn_trait<Fn>::args_type>::value);
         // constexpr map?
         routes_[method] = [this, method, fn](const auto& msg) { return proxy_call(fn, msg); };
     }
@@ -202,9 +209,10 @@ class Server {
     [[nodiscard]] auto proxy_call(Fn fn, const zmq::message_t& msg) -> const zmq::message_t
     {
         using ArgsTuple = typename zrpc::fn_trait<Fn>::tuple_type;
+        static_assert(std::is_constructible_v<ArgsTuple>);
 
         std::string method;
-        ArgsTuple args;
+        ArgsTuple args{};
         zmq::message_t resp;
 
         // deserialize args
@@ -237,9 +245,10 @@ class Server {
         -> const zmq::message_t
     {
         using ArgsTuple = typename zrpc::fn_trait<Fn>::tuple_type;
+        static_assert(std::is_constructible_v<ArgsTuple>);
 
         std::string method;
-        ArgsTuple args;
+        ArgsTuple args{};
         zmq::message_t resp;
 
         // deserialize args
@@ -302,9 +311,12 @@ class Client {
     Client(Client&) = delete;
 
     // calling convention:
-    // request: [method, args...]
-    // response: [error_code, return value]
+    //   - request: [method, args...]
+    //   - response: [error_code, return value]
     // requires:
+    //   - `ReturnType`: is_default_constructible
+    //   - `Args...`: `PackableObject`, e.g.: has a `pack()` member
+    // usage:
     //   - must specify return type via `call<int>()` / `call<std::string>()` etc.
     template <typename ReturnType = void, typename... Args>
     auto call(const char* method, Args... args) -> ReturnType
@@ -312,7 +324,8 @@ class Client {
         zmq::message_t req, resp;
 
         {
-            auto ec = SerdeT::serialize(req, method, args...);
+            std::string str_method = method;
+            auto ec = SerdeT::serialize(req, str_method, args...);
             auto req_result = sock_.send(req, zmq::send_flags::none);
         }
 
@@ -321,7 +334,8 @@ class Client {
             if constexpr (std::is_void_v<ReturnType>) {
                 return;
             } else {
-                ReturnType ret;
+                static_assert(std::is_constructible_v<ReturnType>);
+                ReturnType ret{};
                 auto ec = SerdeT::deserialize(resp, ret);
                 return ret;
             }
