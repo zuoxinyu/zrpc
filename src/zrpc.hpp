@@ -18,31 +18,25 @@ namespace detail {
 template <typename T>
 using remove_cvref_t = std::remove_cv_t<std::remove_reference_t<T>>;
 
-template <typename Fn>
+template <typename>
 struct fn_traits;
 
-template <typename Fn>
-struct fn_traits : fn_traits<remove_cvref_t<Fn>> {};
+template <typename Fn>   // overloaded operator () (e.g. std::function)
+struct fn_traits : fn_traits<decltype(&std::remove_reference_t<Fn>::operator())> {};
 
-// FIXME: error: decltype on overloaded function
-template <typename Fn>
-struct lambda_traits : fn_traits<decltype(&remove_cvref_t<Fn>::operator())> {};
-
-// ordinary functions
-template <typename ReturnType, typename... Args>
+template <typename ReturnType, typename... Args>   // Free functions
 struct fn_traits<ReturnType(Args...)> {
-    using return_type = ReturnType;
-
-    using tuple_type = std::tuple<remove_cvref_t<Args>...>;
-
-    template <size_t Idx>
-    using arg_type = typename std::tuple_element<Idx, tuple_type>::type;
+    using tuple_type = std::tuple<Args...>;
 
     static constexpr std::size_t arity = std::tuple_size<tuple_type>::value;
+
+    template <std::size_t N>
+    using argument_type = typename std::tuple_element<N, tuple_type>::type;
+
+    using return_type = ReturnType;
 };
 
-// function pointers
-template <typename ReturnType, typename... Args>
+template <typename ReturnType, typename... Args>   // Function pointers
 struct fn_traits<ReturnType (*)(Args...)> : fn_traits<ReturnType(Args...)> {};
 
 // member functions
@@ -51,13 +45,10 @@ struct fn_traits<ReturnType (Class::*)(Args...)> : fn_traits<ReturnType(Args...)
     using class_type = Class;
 };
 
-// const member functions
+// const member functions (and lambda's operator() gets redirected here)
 template <typename ReturnType, typename Class, typename... Args>
 struct fn_traits<ReturnType (Class::*)(Args...) const> : fn_traits<ReturnType (Class::*)(Args...)> {
 };
-
-template <typename ReturnType, typename... Args>
-struct fn_traits<std::function<ReturnType(Args...)>> : fn_traits<ReturnType(Args...)> {};
 
 // TODO: whether can be serialized/deserialized to msgpack
 template <typename T>
@@ -141,6 +132,10 @@ struct is_error_code_enum<zrpc::RPCError> : public true_type {};
 }   // namespace std
 
 namespace zrpc {
+
+template <typename Fn>
+using fn_traits = detail::fn_traits<Fn>;
+
 static const std::string kEndpoint = "tcp://127.0.0.1:5555";
 
 // default [De]serialize implementation
@@ -223,7 +218,6 @@ class Server {
     //   - member function
     //   - member function pointer
     //   - properly initiated generic function template
-    //   - currently lambda and callable object is not supported
     template <typename Fn>
     inline void register_method(const char* method, Fn fn)
     {
@@ -238,9 +232,7 @@ class Server {
     {
         static_assert(detail::is_registerable<Fn>,
                       "cannot register function due to missing requirements");
-        routes_[method] = [this, that, method, fn](const auto& msg) {
-            return proxy_call(fn, that, msg);
-        };
+        routes_[method] = [this, that, fn](const auto& msg) { return proxy_call(fn, that, msg); };
     }
 
   private:
@@ -265,8 +257,8 @@ class Server {
     template <typename Fn>
     [[nodiscard]] auto proxy_call(Fn fn, const zmq::message_t& msg) -> const zmq::message_t
     {
-        using ArgsTuple = typename detail::fn_traits<Fn>::tuple_type;
-        using ReturnType = typename detail::fn_traits<Fn>::return_type;
+        using ArgsTuple = typename fn_traits<Fn>::tuple_type;
+        using ReturnType = typename fn_traits<Fn>::return_type;
         static_assert(std::is_constructible_v<ArgsTuple>);
 
         std::string method;
@@ -299,8 +291,8 @@ class Server {
     [[nodiscard]] auto proxy_call(Fn fn, Class* that, const zmq::message_t& msg)
         -> const zmq::message_t
     {
-        using ArgsTuple = typename detail::fn_traits<Fn>::tuple_type;
-        using ReturnType = typename detail::fn_traits<Fn>::return_type;
+        using ArgsTuple = typename fn_traits<Fn>::tuple_type;
+        using ReturnType = typename fn_traits<Fn>::return_type;
         static_assert(std::is_constructible_v<ArgsTuple>);
 
         auto bound_fn = [fn, that](auto&&... xs) { return std::invoke(fn, that, xs...); };

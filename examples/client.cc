@@ -23,4 +23,7 @@ int main()
 
     int r = cli.call<int>("bar.virtual_method");
     spdlog::info("bar.virtual_method: {}", r);
+
+    r = cli.call<int>("lambda");
+    spdlog::info("lambda: {}", r);
 }
