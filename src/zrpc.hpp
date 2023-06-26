@@ -175,11 +175,10 @@ struct Serde {
 template <typename SerdeT = Serde>
 class Server {
   public:
-    using DispatcherFn = std::function<const zmq::message_t(const zmq::message_t& msg)>;
+    using DispatcherFn = std::function<const zmq::message_t(const zmq::message_t&)>;
+    using AsyncDispatcherFn = std::pair<DispatcherFn, std::function<void(const zmq::message_t&)>>;
     using Dispatcher = std::map<std::string, DispatcherFn>;
-    using DispatcherAsyncFn = std::pair<std::function<void(const zmq::message_t& msg)>,
-                                        std::function<void(const zmq::message_t& msg)>>;
-    using AsyncDispatch = std::map<std::string, DispatcherAsyncFn>;
+    using AsyncDispatcher = std::map<std::string, AsyncDispatcherFn>;
 
     Server(const std::string& endpoint = kEndpoint)
     {
@@ -197,9 +196,13 @@ class Server {
 
             std::string method;
             auto ec = SerdeT::deserialize(req, method);
-
-            auto resp = call(method, req);
-            auto send_result = sock_.send(resp, zmq::send_flags::none);
+            if (async_routes_.count(method)) {
+                auto resp = async_call(method, req);
+                auto send_result = sock_.send(resp, zmq::send_flags::none);
+            } else {
+                auto resp = call(method, req);
+                auto send_result = sock_.send(resp, zmq::send_flags::none);
+            }
         }
         return 0;
     }
@@ -237,6 +240,10 @@ class Server {
         routes_[method] = [this, that, fn](const auto& msg) { return proxy_call(fn, that, msg); };
     }
 
+    template <typename Fn, typename Callback>
+    void register_async_method(const char* method, Fn fn, Callback cb)
+    {}
+
   private:
     [[nodiscard]] auto call(const std::string& method, const zmq::message_t& msg)
         -> const zmq::message_t
@@ -256,6 +263,23 @@ class Server {
         return ret;
     }
 
+    [[nodiscard]] auto async_call(const std::string& method, const zmq::message_t& msg)
+        -> const zmq::message_t
+    {
+        zmq::message_t ret;
+        try {
+            auto [fn, cb] = async_routes_.at(method);
+            return fn(msg);
+        } catch (std::out_of_range& e) {
+            spdlog::error("method: [{}] not found", method);
+            std::ignore = SerdeT::serialize(ret, RPCError::kBadMethod);
+        } catch (std::exception& e) {
+            spdlog::error("unknown error during invoking method [{}]: {}", method, e.what());
+            std::ignore = SerdeT::serialize(ret, RPCError::kUnknown);
+        }
+
+        return ret;
+    }
     template <typename Fn>
     [[nodiscard]] auto proxy_call(Fn fn, const zmq::message_t& msg) -> const zmq::message_t
     {
@@ -325,16 +349,17 @@ class Server {
 
   private:
     // (logically) immutable resources
-    zmq::context_t ctx_;
+    zmq::context_t ctx_{};
     // socket for RPC calls
     zmq::socket_t sock_{ctx_, zmq::socket_type::rep};
     // socket for async RPC calls
-    zmq::socket_t async_sock_{ctx_, zmq::socket_type::pub};
+    zmq::socket_t async_pub_{ctx_, zmq::socket_type::pub};
     // socket for publishing events
-    zmq::socket_t pub_{ctx_, zmq::socket_type::pub};
+    zmq::socket_t event_pub_{ctx_, zmq::socket_type::pub};
 
     // init once resources
-    Dispatcher routes_;
+    Dispatcher routes_{};
+    AsyncDispatcher async_routes_{};
 
     // mutable states
     std::atomic<bool> stop_{false};
@@ -347,9 +372,9 @@ class Client {
     using EventHandler = std::function<bool(Event&)>;   // return bool to delete event?
     using EventQueue = std::map<Event, EventHandler>;
 
-    using AsyncCallbackArgs = zmq::message_t;
+    using AsyncCallbackArgs = zmq::message_t&;
     using AsyncToken = std::string;
-    using AsyncHandler = std::function<void(AsyncCallbackArgs&)>;
+    using AsyncHandler = std::function<void(AsyncCallbackArgs)>;
     using AsyncQueue = std::unordered_map<AsyncToken, AsyncHandler>;
 
     Client(const std::string& endpoint = kEndpoint)
@@ -433,9 +458,8 @@ class Client {
             auto ec = Serde::serialize(req, std::string(method), token, args...);
             // synchronous send
             auto req_result = sock_.send(req, zmq::send_flags::none);
-
             // [token, callback args...]
-            AsyncHandler handler = [cb = std::move(cb), token = token](AsyncCallbackArgs& msg) {
+            auto handler = [cb = std::move(cb), token = token](AsyncCallbackArgs msg) {
                 using TupleType = typename fn_traits<Callback>::tuple_type;
 
                 AsyncToken token_back;
@@ -522,6 +546,7 @@ class Client {
                 }
             }
         }
+        spdlog::trace("poll thread stopped normally");
     }
 
     void handle_async(zmq::message_t& msg)
@@ -534,7 +559,7 @@ class Client {
 
         auto handler = async_q_.at(token);
 
-        handler(msg);
+        handler(msg);   // recursive async call? deadlock?
 
         async_q_.erase(token);
     }
@@ -547,9 +572,13 @@ class Client {
 
         std::lock_guard<std::mutex> lock{event_q_lock_};
 
+        if (!event_q_.count(event)) {
+            return;
+        }
+
         auto handler = event_q_.at(event);
 
-        bool unregister = handler(event);
+        bool unregister = !handler(event);
 
         if (unregister) {
             event_q_.erase(event);

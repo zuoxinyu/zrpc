@@ -52,6 +52,17 @@ struct Bar : public Foo {
     }
 };
 
+void async_method(int i, std::function<void(int)> cb)
+
+{
+    using namespace std::chrono_literals;
+    auto thread_fn = [cb](int arg) {
+        std::this_thread::sleep_for(2000ms);
+        cb(arg);
+    };
+    std::thread(thread_fn, i).detach();
+}
+
 
 int main()
 {
@@ -67,6 +78,9 @@ int main()
     svr.register_method("bar.virtual_method", static_cast<Foo*>(&bar), &Foo::virtual_method);
     svr.register_method("lambda", [] { return 42; });
     // svr.register_method("pointer_args_fn", pointer_args_fn);
+
+
+    svr.register_async_method("async_method", async_method, [](int x) {});
 
     svr.serve();
     return 0;
