@@ -26,4 +26,7 @@ int main()
 
     r = cli.call<int>("lambda");
     spdlog::info("lambda: {}", r);
+
+    cli.async_call(
+        "async_method", [](std::string s) {}, 1, 2, 3);
 }
