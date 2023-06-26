@@ -19,78 +19,94 @@ template <typename T>
 using remove_cvref_t = std::remove_cv_t<std::remove_reference_t<T>>;
 
 template <typename Fn>
-struct fn_trait_impl;
+struct fn_traits;
 
 template <typename Fn>
-struct fn_trait : fn_trait_impl<remove_cvref_t<Fn>> {};
+struct fn_traits : fn_traits<remove_cvref_t<Fn>> {};
 
-// ordinary function
+// FIXME: error: decltype on overloaded function
+template <typename Fn>
+struct lambda_traits : fn_traits<decltype(&remove_cvref_t<Fn>::operator())> {};
+
+// ordinary functions
 template <typename ReturnType, typename... Args>
-struct fn_trait_impl<ReturnType(Args...)> {
+struct fn_traits<ReturnType(Args...)> {
     using return_type = ReturnType;
 
-    template <size_t Idx>
-    struct args {
-        using type = typename std::tuple_element<Idx, std::tuple<Args...>>::type;
-    };
-
     using tuple_type = std::tuple<remove_cvref_t<Args>...>;
+
+    template <size_t Idx>
+    using arg_type = typename std::tuple_element<Idx, tuple_type>::type;
+
+    static constexpr std::size_t arity = std::tuple_size<tuple_type>::value;
 };
 
-// function pointer
+// function pointers
 template <typename ReturnType, typename... Args>
-struct fn_trait_impl<ReturnType (*)(Args...)> : fn_trait_impl<ReturnType(Args...)> {};
+struct fn_traits<ReturnType (*)(Args...)> : fn_traits<ReturnType(Args...)> {};
 
-// member function pointer
+// member functions
 template <typename ReturnType, typename Class, typename... Args>
-struct fn_trait_impl<ReturnType (Class::*)(Args...)> : fn_trait_impl<ReturnType(Args...)> {};
-
-template <typename Fn>
-struct fn_trait_args {
-    using args_type = typename std::tuple_element<0, typename fn_trait<Fn>::tuple_type>::type;
+struct fn_traits<ReturnType (Class::*)(Args...)> : fn_traits<ReturnType(Args...)> {
+    using class_type = Class;
 };
 
+// const member functions
+template <typename ReturnType, typename Class, typename... Args>
+struct fn_traits<ReturnType (Class::*)(Args...) const> : fn_traits<ReturnType (Class::*)(Args...)> {
+};
+
+template <typename ReturnType, typename... Args>
+struct fn_traits<std::function<ReturnType(Args...)>> : fn_traits<ReturnType(Args...)> {};
+
+// TODO: whether can be serialized/deserialized to msgpack
 template <typename T>
 struct is_serializable_type {
     static constexpr bool value = true;
 };
 
 template <typename T>
-constexpr bool is_pointer_type()
-{
-    return std::is_pointer_v<remove_cvref_t<T>>;
-}
+constexpr inline bool is_pointer_type = std::is_pointer_v<remove_cvref_t<T>>;
 
 template <typename T>
 struct any_pointer_type {
-    static constexpr bool value = is_pointer_type<T>();
+    static constexpr inline bool value = is_pointer_type<T>;
 };
 
 template <typename... Args>
 struct any_pointer_type<std::tuple<Args...>> {
-    static constexpr bool value = (is_pointer_type<Args>() or ...);
+    static constexpr inline bool value = (is_pointer_type<Args> or ...);
 };
 
 static_assert(any_pointer_type<std::tuple<int*, float>>::value);
 static_assert(!any_pointer_type<std::tuple<int, float>>::value);
 
+template <typename Fn>
+constexpr inline bool is_registerable =
+    is_serializable_type<typename fn_traits<Fn>::return_type>::value and
+    !any_pointer_type<typename fn_traits<Fn>::tuple_type>::value;
+
 }   // namespace detail
 
-enum class RPCError {
+enum class RPCError : uint32_t {
     kNoError = 0,
-    kBadMethod,
-    kSerdeFailed,
+
+    kBadPayload = 400,
+    kBadMethod = 404,
+
+    kUnknown = 500,
 };
 
 struct RPCErrorCategory : public std::error_category {
-    const char* name() const noexcept override { return "zrpc"; }
+    inline const char* name() const noexcept override { return "zrpc"; }
 
     std::string message(int ec) const override
     {
         switch (static_cast<zrpc::RPCError>(ec)) {
         case RPCError::kNoError: return "(no error)"; break;
-        case RPCError::kBadMethod: return "bad request"; break;
-        case RPCError::kSerdeFailed: return "bad payload"; break;
+        case RPCError::kBadPayload: return "bad payload"; break;
+        case RPCError::kBadMethod: return "bad method"; break;
+        case RPCError::kUnknown:
         default: return "(unrecognized error)";
         }
     }
@@ -104,6 +120,21 @@ inline std::error_code make_error_code(zrpc::RPCError e)
 }
 }   // namespace zrpc
 
+namespace msgpack {
+template <>
+inline void Packer::pack_type<zrpc::RPCError>(const zrpc::RPCError& e)
+{
+    pack_type(static_cast<const uint32_t>(e));
+}
+template <>
+inline void Unpacker::unpack_type<zrpc::RPCError>(zrpc::RPCError& e)
+{
+    uint32_t u;
+    unpack_type(u);
+    e = static_cast<zrpc::RPCError>(u);
+}
+}   // namespace msgpack
+
 namespace std {
 template <>
 struct is_error_code_enum<zrpc::RPCError> : public true_type {};
@@ -111,7 +142,6 @@ struct is_error_code_enum<zrpc::RPCError> : public true_type {};
 
 namespace zrpc {
 static const std::string kEndpoint = "tcp://127.0.0.1:5555";
-using detail::fn_trait;
 
 // default [De]serialize implementation
 // TODO: make it a custom point in a better way
@@ -122,7 +152,7 @@ struct Serde {
     {
         try {
             msgpack::Packer packer;
-            ([&] { packer.process(Args(args)); }(), ...);
+            (packer.process(args), ...);
             msg = {packer.vector().data(), packer.vector().size()};
             return {};
         } catch (std::error_code ec) {
@@ -137,7 +167,7 @@ struct Serde {
         try {
             msgpack::Unpacker unpacker(static_cast<const uint8_t*>(req.data()),
                                        static_cast<const size_t>(req.size()));
-            ([&] { unpacker.process(args); }(), ...);
+            (unpacker.process(args), ...);
             return {};
         } catch (std::error_code ec) {
             return ec;
@@ -145,7 +175,6 @@ struct Serde {
     }
 };
 
-// calling convention:
 template <typename SerdeT = Serde>
 class Server {
   public:
@@ -163,24 +192,17 @@ class Server {
 
     Server(Server&) = delete;
 
-    int serve()
+    int serve() noexcept(false)
     {
         while (!stop_) {
             zmq::message_t req;
             auto recv_result = sock_.recv(req, zmq::recv_flags::none);
-            if (!recv_result) {
-                spdlog::error("failed to recv request: zmq::socket_t::recv()");
-                // TODO
-            }
 
             std::string method;
-            std::error_code ec = SerdeT::deserialize(req, method);
-            if (ec) {
-                // TODO
-            }
+            auto ec = SerdeT::deserialize(req, method);
 
-            auto resp = call(method.c_str(), req);
-            sock_.send(resp, zmq::send_flags::none);
+            auto resp = call(method, req);
+            auto send_result = sock_.send(resp, zmq::send_flags::none);
         }
         return 0;
     }
@@ -191,16 +213,22 @@ class Server {
         return stop_;
     }
 
-    // `Fn` requires:
-    //   - return type: only types defined in msgpack
-    //   - parameter types: only types defined in msgpack
-    //   - generic function must be explicity initiated
+    // `Fn` requirements:
+    //   - return type: only types defined in msgpack or void
+    //   - parameter types: only types defined in msgpack, no pointers
+    //   - noexcept
+    // `Fn` can be:
+    //   - free function
+    //   - free function pointer
+    //   - member function
+    //   - member function pointer
+    //   - properly initiated generic function template
+    //   - currently lambda and callable object is not supported
     template <typename Fn>
     inline void register_method(const char* method, Fn fn)
     {
-        static_assert(detail::is_serializable_type<typename fn_trait<Fn>::return_type>::value);
-        static_assert(!detail::any_pointer_type<typename fn_trait<Fn>::tuple_type>::value);
-        // static_assert(detail::is_serializable_type<typename fn_trait<Fn>::args_type>::value);
+        static_assert(detail::is_registerable<Fn>,
+                      "cannot register function due to missing requirements");
         // constexpr map?
         routes_[method] = [this, method, fn](const auto& msg) { return proxy_call(fn, msg); };
     }
@@ -208,63 +236,37 @@ class Server {
     template <typename Fn, typename Class>
     inline void register_method(const char* method, Class* that, Fn fn)
     {
+        static_assert(detail::is_registerable<Fn>,
+                      "cannot register function due to missing requirements");
         routes_[method] = [this, that, method, fn](const auto& msg) {
             return proxy_call(fn, that, msg);
         };
     }
 
   private:
-    [[nodiscard]] auto call(const char* method, const zmq::message_t& msg) -> const zmq::message_t
+    [[nodiscard]] auto call(const std::string& method, const zmq::message_t& msg)
+        -> const zmq::message_t
     {
+        zmq::message_t ret;
         try {
             auto fn = routes_.at(method);
             return fn(msg);
-        } catch (std::exception& e) {
+        } catch (std::out_of_range& e) {
             spdlog::error("method: [{}] not found", method);
-            return zmq::message_t{std::string(e.what())};
+            std::ignore = SerdeT::serialize(ret, RPCError::kBadMethod);
+        } catch (std::exception& e) {
+            spdlog::error("unknown error during invoking method [{}]: {}", method, e.what());
+            std::ignore = SerdeT::serialize(ret, RPCError::kUnknown);
         }
+
+        return ret;
     }
 
     template <typename Fn>
     [[nodiscard]] auto proxy_call(Fn fn, const zmq::message_t& msg) -> const zmq::message_t
     {
-        using ArgsTuple = typename zrpc::fn_trait<Fn>::tuple_type;
-        static_assert(std::is_constructible_v<ArgsTuple>);
-
-        std::string method;
-        ArgsTuple args{};
-        zmq::message_t resp;
-
-        // deserialize args
-        {
-            auto de = [&](auto&... xs) { return Serde::deserialize(msg, method, xs...); };
-            auto ec = std::apply(de, args);
-            if (ec) {
-                // TODO
-            }
-        }
-
-        // call and get return value
-        {
-            if constexpr (!std::is_void_v<typename fn_trait<Fn>::return_type>) {
-                auto ret = std::apply(fn, args);
-                spdlog::trace("invoke {}{} -> {}", method, args, ret);
-                auto ec = Serde::serialize(resp, /*RPCError::kNoError*/ ret);
-                if (ec) {
-                    // TODO
-                }
-            } else {
-                std::apply(fn, args);
-            }
-        }
-        return resp;
-    }
-
-    template <typename Fn, typename Class>
-    [[nodiscard]] auto proxy_call(Fn fn, Class* that, const zmq::message_t& msg)
-        -> const zmq::message_t
-    {
-        using ArgsTuple = typename zrpc::fn_trait<Fn>::tuple_type;
+        using ArgsTuple = typename detail::fn_traits<Fn>::tuple_type;
+        using ReturnType = typename detail::fn_traits<Fn>::return_type;
         static_assert(std::is_constructible_v<ArgsTuple>);
 
         std::string method;
@@ -274,25 +276,54 @@ class Server {
         // deserialize args
         {
             auto de = [&](auto&... xs) { return SerdeT::deserialize(msg, method, xs...); };
-            auto ec = std::apply(de, args);
-            if (ec) {
-                // TODO
-            }
+            std::ignore = std::apply(de, args);
         }
 
         // call and get return value
         {
-            auto bound_fn = [fn, that](auto&&... xs) { return std::invoke(fn, that, xs...); };
-            if constexpr (!std::is_void_v<typename fn_trait<Fn>::return_type>) {
-                auto ret = std::apply(bound_fn, args);
-
+            if constexpr (!std::is_void_v<ReturnType>) {
+                // try catch?
+                auto ret = std::apply(fn, args);
                 spdlog::trace("invoke {}{} -> {}", method, args, ret);
-                auto ec = SerdeT::serialize(resp, ret);
-                if (ec) {
-                    // TODO
-                }
+                std::ignore = SerdeT::serialize(resp, RPCError::kNoError, ret);
+            } else {
+                std::apply(fn, args);
+                spdlog::trace("invoke {}{} -> void", method, args);
+                std::ignore = SerdeT::serialize(resp, RPCError::kNoError);
+            }
+        }
+        return resp;
+    }
+
+    template <typename Fn, typename Class>
+    [[nodiscard]] auto proxy_call(Fn fn, Class* that, const zmq::message_t& msg)
+        -> const zmq::message_t
+    {
+        using ArgsTuple = typename detail::fn_traits<Fn>::tuple_type;
+        using ReturnType = typename detail::fn_traits<Fn>::return_type;
+        static_assert(std::is_constructible_v<ArgsTuple>);
+
+        auto bound_fn = [fn, that](auto&&... xs) { return std::invoke(fn, that, xs...); };
+        std::string method;
+        ArgsTuple args{};
+        zmq::message_t resp;
+
+        // deserialize args
+        {
+            auto de = [&](auto&... xs) { return SerdeT::deserialize(msg, method, xs...); };
+            std::ignore = std::apply(de, args);
+        }
+
+        // call and get return value
+        {
+            if constexpr (!std::is_void_v<ReturnType>) {
+                auto ret = std::apply(bound_fn, args);
+                spdlog::trace("invoke {}{} -> {}", method, args, ret);
+                std::ignore = SerdeT::serialize(resp, RPCError::kNoError, ret);
             } else {
                 std::apply(bound_fn, args);
+                spdlog::trace("invoke {}{} -> {}", method, args);
+                std::ignore = SerdeT::serialize(resp, RPCError::kNoError);
             }
         }
         return resp;
@@ -334,29 +365,37 @@ class Client {
     //   - request: [method, args...]
     //   - response: [error_code, return value]
     // requires:
-    //   - `ReturnType`: is_default_constructible
-    //   - `Args...`: `PackableObject`, e.g.: has a `pack()` member
+    //   - `ReturnType`: is_serializable_type && (is_default_constructible or is_void)
+    //   - `Args...`: is_serializable_type
     // usage:
     //   - must specify return type via `call<int>()` / `call<std::string>()` etc.
     template <typename ReturnType = void, typename... Args>
-    auto call(const char* method, Args... args) -> ReturnType
+    auto call(const char* method, Args... args) noexcept(false) -> ReturnType
     {
         zmq::message_t req, resp;
 
         {
-            std::string str_method = method;
-            auto ec = SerdeT::serialize(req, str_method, args...);
+            auto ec = SerdeT::serialize(req, std::string(method), args...);
             auto req_result = sock_.send(req, zmq::send_flags::none);
         }
 
         {
             auto resp_result = sock_.recv(resp, zmq::recv_flags::none);
             if constexpr (std::is_void_v<ReturnType>) {
+                RPCError code;
+                auto ec = SerdeT::deserialize(resp, code);
+                if (code != RPCError::kNoError) {
+                    throw code;
+                }
                 return;
             } else {
                 static_assert(std::is_constructible_v<ReturnType>);
+                RPCError code;
                 ReturnType ret{};
-                auto ec = SerdeT::deserialize(resp, ret);
+                auto ec = SerdeT::deserialize(resp, code, ret);
+                if (code != RPCError::kNoError) {
+                    throw code;
+                }
                 return ret;
             }
         }
