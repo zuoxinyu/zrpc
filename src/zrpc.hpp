@@ -92,6 +92,8 @@ static const std::string kAsyncEndpoint = "tcp://127.0.0.1:5556";
 static const std::string kEventEndpoint = "tcp://127.0.0.1:5557";
 static const std::string kAsyncFilter = "";   // FIXME: figure out this strange usage...
 static const std::string kEventFilter = "";
+static const std::string kHandshake = "hello";
+static const std::string kHandshakeReply = "hi";
 
 // default [De]serialize implementation
 // TODO: make it a custom point in a better way
@@ -135,6 +137,10 @@ class Server {
 
     Server(const std::string& endpoint = kEndpoint)
     {
+        // avoid lossing message
+        // async_pub_.set(zmq::sockopt::immediate, true);
+        // event_pub_.set(zmq::sockopt::immediate, true);
+
         sock_.bind(endpoint);
         async_pub_.bind(kAsyncEndpoint);
         event_pub_.bind(kEventEndpoint);
@@ -143,13 +149,8 @@ class Server {
 
     Server(Server&) = delete;
 
-    [[noreturn]] void serve() noexcept(false)
+    void serve() noexcept(false)
     {
-        // zmq::message_t hello;
-        // std::ignore = Serde::serialize(hello, std::string("hello"));
-        // // publish a handshake message
-        // async_pub_.send(hello, zmq::send_flags::none);
-
         while (!stop_) {
             zmq::message_t req, resp;
             auto recv_result = sock_.recv(req, zmq::recv_flags::none);
@@ -157,6 +158,10 @@ class Server {
             std::string method;
             auto ec = SerdeT::deserialize(req, method);
 
+            // if (method == kHandshakeReply) {
+            //     std::ignore = Serde::serialize(resp, kHandshake);
+            //     auto send_result = sock_.send(resp, zmq::send_flags::none);
+            // } else
             if (routes_.count(method)) {
                 auto resp = call(method, req);
                 auto send_result = sock_.send(resp, zmq::send_flags::none);
@@ -380,6 +385,15 @@ class Server {
         return resp;
     }
 
+    void try_handshake()
+    {
+        // publish a handshake message after recv the first async call from *a new client*
+        // TODO: need identitify clients
+        zmq::message_t hello;
+        std::ignore = Serde::serialize(hello, kHandshake);
+        async_pub_.send(hello, zmq::send_flags::none);
+    }
+
   private:
     // (logically) immutable resources
     zmq::context_t ctx_{1};
@@ -404,11 +418,13 @@ class Client {
     Client(const std::string& endpoint = kEndpoint)
     {
         // todo: set metadata
+        // sock_.set(zmq::sockopt::routing_id, identity_);
+        async_sub_.set(zmq::sockopt::subscribe, kAsyncFilter);
+        event_sub_.set(zmq::sockopt::subscribe, kEventFilter);
+
         sock_.connect(endpoint);
         async_sub_.connect(kAsyncEndpoint);
         event_sub_.connect(kEventEndpoint);
-        async_sub_.set(zmq::sockopt::subscribe, kAsyncFilter);
-        event_sub_.set(zmq::sockopt::subscribe, kEventFilter);
 
         // poll_thread_ = std::thread(&Client::poll_thread, this);
 
@@ -431,7 +447,7 @@ class Client {
     // poll style api
     //   - return value: number of pending async operations
     //   - args: `timeout`
-    int poll(std::chrono::milliseconds timeout = -1ms) { return poll_(timeout); }
+    int poll(std::chrono::milliseconds timeout = -1ms) { return poll_async_sub(timeout); }
 
     // Calling convention:
     //   - send: [method, args...]
@@ -560,10 +576,29 @@ class Client {
     }
 
   private:
-    int poll_(std::chrono::milliseconds timeout)
+    void try_handshake()
+    {
+        if (!async_sub_connected_) {
+            zmq::message_t msg, req, resp;
+            std::string handshake;
+
+            std::ignore = async_sub_.recv(msg, zmq::recv_flags::none);
+            std::ignore = Serde::deserialize(msg, handshake);
+            if (handshake == kHandshake) {
+                std::ignore = Serde::serialize(req, kHandshakeReply);
+                std::ignore = sock_.send(req, zmq::send_flags::none);
+                std::ignore = sock_.recv(resp, zmq::recv_flags::none);
+                std::ignore = resp;
+                async_sub_connected_ = true;
+            }
+        }
+    }
+
+    int poll_async_sub(std::chrono::milliseconds timeout)
     {
         zmq::message_t msg;
         // FIXME: message lost would occur, need synchronization
+        // try_handshake();
         auto recv_result = async_sub_.recv(msg, zmq::recv_flags::none);
         handle_async(msg);
 
@@ -692,6 +727,7 @@ class Client {
     }
 
   private:
+    std::string identity_ = generate_token();
     // (logically) immutable resources
     zmq::context_t ctx_{1};
     // socket for sync RPC calls
@@ -713,6 +749,7 @@ class Client {
     // waiting async operations
     std::mutex async_q_lock_{};
     AsyncQueue async_q_{};
+    std::atomic<bool> async_sub_connected_{false};
 };
 
 }   // namespace zrpc
