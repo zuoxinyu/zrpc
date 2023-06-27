@@ -1,86 +1,22 @@
-#ifndef _ZRPC_HPP_
-#define _ZRPC_HPP_
+#ifndef __ZRPC_HPP__
+#define __ZRPC_HPP__
 #include <atomic>
 #include <functional>
 #include <map>
 #include <mutex>
 #include <random>
-#include <sstream>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
-#include "msgpack.hpp"
 #include <fmt/ranges.h>
 #include <spdlog/spdlog.h>
 #include <zmq.hpp>
 
+#include "msgpack.hpp"
+#include "traits.hpp"
+
 namespace zrpc {
-namespace detail {
-template <typename T>
-using remove_cvref_t = std::remove_cv_t<std::remove_reference_t<T>>;
-
-template <typename>
-struct fn_traits;
-
-template <typename Fn>   // overloaded operator () (e.g. std::function)
-struct fn_traits : fn_traits<decltype(&std::remove_reference_t<Fn>::operator())> {};
-
-template <typename ReturnType, typename... Args>   // Free functions
-struct fn_traits<ReturnType(Args...)> {
-    using tuple_type = std::tuple<Args...>;
-
-    static constexpr std::size_t arity = std::tuple_size<tuple_type>::value;
-
-    template <std::size_t N>
-    using argument_type = typename std::tuple_element<N, tuple_type>::type;
-
-    using return_type = ReturnType;
-};
-
-template <typename ReturnType, typename... Args>   // Function pointers
-struct fn_traits<ReturnType (*)(Args...)> : fn_traits<ReturnType(Args...)> {};
-
-// member functions
-template <typename ReturnType, typename Class, typename... Args>
-struct fn_traits<ReturnType (Class::*)(Args...)> : fn_traits<ReturnType(Args...)> {
-    using class_type = Class;
-};
-
-// const member functions (and lambda's operator() gets redirected here)
-template <typename ReturnType, typename Class, typename... Args>
-struct fn_traits<ReturnType (Class::*)(Args...) const> : fn_traits<ReturnType (Class::*)(Args...)> {
-};
-
-// TODO: whether can be serialized/deserialized to msgpack
-template <typename T>
-struct is_serializable_type {
-    static constexpr bool value = true;
-};
-
-template <typename T>
-constexpr inline bool is_pointer_type = std::is_pointer_v<remove_cvref_t<T>>;
-
-template <typename T>
-struct any_pointer_type {
-    static constexpr inline bool value = is_pointer_type<T>;
-};
-
-template <typename... Args>
-struct any_pointer_type<std::tuple<Args...>> {
-    static constexpr inline bool value = (is_pointer_type<Args> or ...);
-};
-
-static_assert(any_pointer_type<std::tuple<int*, float>>::value);
-static_assert(!any_pointer_type<std::tuple<int, float>>::value);
-
-template <typename Fn>
-constexpr inline bool is_registerable =
-    is_serializable_type<typename fn_traits<Fn>::return_type>::value and
-    !any_pointer_type<typename fn_traits<Fn>::tuple_type>::value;
-
-}   // namespace detail
-
 enum class RPCError : uint32_t {
     kNoError = 0,
 
@@ -135,10 +71,27 @@ struct is_error_code_enum<zrpc::RPCError> : public true_type {};
 
 namespace zrpc {
 
+using namespace std::chrono_literals;
+
 template <typename Fn>
 using fn_traits = detail::fn_traits<Fn>;
+template <typename Tp>
+using tp_traits = detail::tp_traits<Tp>;
+
+using Event = std::string;
+using EventHandler = std::function<bool(Event&)>;   // return bool to delete event?
+using EventQueue = std::map<Event, EventHandler>;
+
+using AsyncCallbackArgs = zmq::message_t&;
+using AsyncToken = std::string;
+using AsyncHandler = std::function<void(AsyncCallbackArgs)>;
+using AsyncQueue = std::unordered_map<AsyncToken, AsyncHandler>;
 
 static const std::string kEndpoint = "tcp://127.0.0.1:5555";
+static const std::string kAsyncEndpoint = "tcp://127.0.0.1:5556";
+static const std::string kEventEndpoint = "tcp://127.0.0.1:5557";
+static const std::string kAsyncFilter = "";   // FIXME: figure out this strange usage...
+static const std::string kEventFilter = "";
 
 // default [De]serialize implementation
 // TODO: make it a custom point in a better way
@@ -176,13 +129,15 @@ template <typename SerdeT = Serde>
 class Server {
   public:
     using DispatcherFn = std::function<const zmq::message_t(const zmq::message_t&)>;
-    using AsyncDispatcherFn = std::pair<DispatcherFn, std::function<void(const zmq::message_t&)>>;
+    using AsyncDispatcherFn = std::function<const zmq::message_t(const zmq::message_t&)>;
     using Dispatcher = std::map<std::string, DispatcherFn>;
     using AsyncDispatcher = std::map<std::string, AsyncDispatcherFn>;
 
     Server(const std::string& endpoint = kEndpoint)
     {
         sock_.bind(endpoint);
+        async_pub_.bind(kAsyncEndpoint);
+        event_pub_.bind(kEventEndpoint);
         spdlog::info("svr bind to {}", kEndpoint);
     }
 
@@ -190,17 +145,26 @@ class Server {
 
     int serve() noexcept(false)
     {
+        // zmq::message_t hello;
+        // std::ignore = Serde::serialize(hello, std::string("hello"));
+        // // publish a handshake message
+        // async_pub_.send(hello, zmq::send_flags::none);
+
         while (!stop_) {
-            zmq::message_t req;
+            zmq::message_t req, resp;
             auto recv_result = sock_.recv(req, zmq::recv_flags::none);
 
             std::string method;
             auto ec = SerdeT::deserialize(req, method);
-            if (async_routes_.count(method)) {
+
+            if (routes_.count(method)) {
+                auto resp = call(method, req);
+                auto send_result = sock_.send(resp, zmq::send_flags::none);
+            } else if (async_routes_.count(method)) {
                 auto resp = async_call(method, req);
                 auto send_result = sock_.send(resp, zmq::send_flags::none);
             } else {
-                auto resp = call(method, req);
+                std::ignore = Serde::serialize(resp, RPCError::kBadMethod);
                 auto send_result = sock_.send(resp, zmq::send_flags::none);
             }
         }
@@ -229,7 +193,7 @@ class Server {
         static_assert(detail::is_registerable<Fn>,
                       "cannot register function due to missing requirements");
         // constexpr map?
-        routes_[method] = [this, method, fn](const auto& msg) { return proxy_call(fn, msg); };
+        routes_[method] = [this, fn](const auto& msg) { return proxy_call(fn, msg); };
     }
 
     template <typename Fn, typename Class>
@@ -240,9 +204,12 @@ class Server {
         routes_[method] = [this, that, fn](const auto& msg) { return proxy_call(fn, that, msg); };
     }
 
-    template <typename Fn, typename Callback>
-    void register_async_method(const char* method, Fn fn, Callback cb)
-    {}
+    // Fn(cb, args...)
+    template <typename Fn>
+    void register_async_method(const char* method, Fn fn)
+    {
+        async_routes_[method] = [this, fn](const auto& msg) { return proxy_async_call(fn, msg); };
+    }
 
   private:
     [[nodiscard]] auto call(const std::string& method, const zmq::message_t& msg)
@@ -266,9 +233,14 @@ class Server {
     [[nodiscard]] auto async_call(const std::string& method, const zmq::message_t& msg)
         -> const zmq::message_t
     {
+        AsyncToken token;
         zmq::message_t ret;
+        std::string _method;
+
+        std::ignore = SerdeT::deserialize(msg, _method, token);
+
         try {
-            auto [fn, cb] = async_routes_.at(method);
+            auto fn = async_routes_.at(method);
             return fn(msg);
         } catch (std::out_of_range& e) {
             spdlog::error("method: [{}] not found", method);
@@ -280,6 +252,7 @@ class Server {
 
         return ret;
     }
+
     template <typename Fn>
     [[nodiscard]] auto proxy_call(Fn fn, const zmq::message_t& msg) -> const zmq::message_t
     {
@@ -347,9 +320,68 @@ class Server {
         return resp;
     }
 
+    template <typename Fn>
+    [[nodiscard]] auto proxy_async_call(Fn fn, const zmq::message_t& msg) -> const zmq::message_t
+    {
+        // fn(cb, int, string, float...)
+        using ArgsTuple = typename fn_traits<Fn>::tuple_type;
+        using ReturnType = typename fn_traits<Fn>::return_type;
+        using CbFn = typename tp_traits<ArgsTuple>::car;
+        using TailArgs = typename tp_traits<ArgsTuple>::cdr;
+        using CbReturnType = typename fn_traits<CbFn>::return_type;
+
+        zmq::message_t resp;
+        std::string method;
+        TailArgs args{};
+        AsyncToken token;
+
+        // deserialize args
+        {
+            auto de = [&](auto&... xs) { return SerdeT::deserialize(msg, method, token, xs...); };
+            std::ignore = std::apply(de, args);
+        }
+
+        // call and get return value
+        {
+            CbFn cb = [this, token_back = token](auto&&... cbargs) {
+                zmq::message_t pubmsg;
+                std::ignore =
+                    Serde::serialize(pubmsg, std::string(kAsyncFilter), token_back, cbargs...);
+
+                auto send_result = async_pub_.send(pubmsg, zmq::send_flags::none);
+
+                // TODO: how to handle return? recv return value from client?
+                if constexpr (std::is_void_v<CbReturnType>) {
+                    spdlog::trace(
+                        "async callback[{}]: fn{} -> void", token_back, std::make_tuple(cbargs...));
+                    return;
+                } else {
+                    spdlog::trace("async callback[{}]: fn{} -> {}",
+                                  token_back,
+                                  std::make_tuple(cbargs...),
+                                  CbReturnType{});
+                    return CbReturnType{};
+                }
+            };
+
+            auto all_args = std::tuple_cat(std::make_tuple(std::move(cb)), args);
+            if constexpr (!std::is_void_v<ReturnType>) {
+                // try catch?
+                auto ret = std::apply(fn, all_args);
+                spdlog::trace("invoke {}{} -> {}", method, args, ret);
+                std::ignore = SerdeT::serialize(resp, RPCError::kNoError, ret);
+            } else {
+                std::apply(fn, all_args);
+                spdlog::trace("invoke {}{} -> void", method, args);
+                std::ignore = SerdeT::serialize(resp, RPCError::kNoError);
+            }
+        }
+        return resp;
+    }
+
   private:
     // (logically) immutable resources
-    zmq::context_t ctx_{};
+    zmq::context_t ctx_{1};
     // socket for RPC calls
     zmq::socket_t sock_{ctx_, zmq::socket_type::rep};
     // socket for async RPC calls
@@ -368,23 +400,16 @@ class Server {
 template <typename SerdeT = Serde>
 class Client {
   public:
-    using Event = std::string;
-    using EventHandler = std::function<bool(Event&)>;   // return bool to delete event?
-    using EventQueue = std::map<Event, EventHandler>;
-
-    using AsyncCallbackArgs = zmq::message_t&;
-    using AsyncToken = std::string;
-    using AsyncHandler = std::function<void(AsyncCallbackArgs)>;
-    using AsyncQueue = std::unordered_map<AsyncToken, AsyncHandler>;
-
     Client(const std::string& endpoint = kEndpoint)
     {
         // todo: set metadata
         sock_.connect(endpoint);
-        async_sub_.set(zmq::sockopt::subscribe, "async");
-        event_sub_.set(zmq::sockopt::subscribe, "event");
+        async_sub_.connect(kAsyncEndpoint);
+        event_sub_.connect(kEventEndpoint);
+        async_sub_.set(zmq::sockopt::subscribe, kAsyncFilter);
+        event_sub_.set(zmq::sockopt::subscribe, kEventFilter);
 
-        poll_thread_ = std::thread(&Client::poll_thread, this);
+        // poll_thread_ = std::thread(&Client::poll_thread, this);
 
         spdlog::info("cli connect to {}", kEndpoint);
     }
@@ -393,12 +418,17 @@ class Client {
 
     ~Client()
     {
+        // TODO: waiting for onflying async tokens?
+        // e.g. waiting for `async_q_.empty() == true` ?
         stop_ = true;
 
         if (poll_thread_.joinable()) {
             poll_thread_.join();
         }
     }
+
+    // poll style api, synchronous
+    int poll(std::chrono::milliseconds timeout = -1ms) { return poll_(timeout); }
 
     // Calling convention:
     //   - send: [method, args...]
@@ -426,6 +456,7 @@ class Client {
                 if (code != RPCError::kNoError) {
                     throw code;
                 }
+                spdlog::trace("client call {}{} -> void", method, std::make_tuple(args...));
                 return;
             } else {
                 static_assert(std::is_constructible_v<ReturnType>);
@@ -435,6 +466,7 @@ class Client {
                 if (code != RPCError::kNoError) {
                     throw code;
                 }
+                spdlog::trace("client call {}{} -> {}", method, std::make_tuple(args...), ret);
                 return ret;
             }
         }
@@ -447,7 +479,7 @@ class Client {
     //       on the server side, then the `Callback` would be invoked as `cb(callback args)`
     //   - recv: [error_code, return value]
     // Thread safety:
-    //   - the `Callback` would be invoked in another thread
+    //   - the `Callback` would be invoked on another thread
     template <typename ReturnType = void, typename Callback, typename... Args>
     auto async_call(const char* method, Callback cb, Args... args)
     {
@@ -464,9 +496,10 @@ class Client {
 
                 AsyncToken token_back;
                 TupleType args{};
+                std::string filter;
 
-                auto de = [&msg, &token_back](auto&&... xs) {
-                    return Serde::deserialize(msg, token_back, xs...);
+                auto de = [&](auto&&... xs) {
+                    return Serde::deserialize(msg, filter, token_back, xs...);
                 };
 
                 // deserialize args
@@ -494,6 +527,8 @@ class Client {
                 if (code != RPCError::kNoError) {
                     throw code;
                 }
+                spdlog::trace(
+                    "client async call[{}] {}{} -> void", token, method, std::make_tuple(args...));
                 return;
             } else {
                 static_assert(std::is_constructible_v<ReturnType>);
@@ -503,12 +538,17 @@ class Client {
                 if (code != RPCError::kNoError) {
                     throw code;
                 }
+                spdlog::trace("client async call[{}] {}{} -> {}",
+                              token,
+                              method,
+                              std::make_tuple(args...),
+                              ret);
                 return ret;
             }
         }
     }
 
-    // register an event, thread safety?
+    // register an event, handler would be invoked on poll thread
     inline auto register_event(const Event& event, EventHandler handler)
     {
         std::lock_guard<std::mutex> lock{event_q_lock_};
@@ -517,6 +557,16 @@ class Client {
     }
 
   private:
+    int poll_(std::chrono::milliseconds timeout)
+    {
+        zmq::message_t msg;
+        auto recv_result = async_sub_.recv(msg, zmq::recv_flags::none);
+        handle_async(msg);
+
+        std::lock_guard<std::mutex> lock{async_q_lock_};
+        return async_q_.size();
+    }
+
     // thread for handling async results and server events
     void poll_thread()
     {
@@ -528,8 +578,12 @@ class Client {
         poller.add(event_sub_, zmq::event_flags::pollin);
 
         while (!stop_) {
-            size_t n = poller.wait_all(in_events, -1ms);
-
+            size_t n;
+            try {
+                n = poller.wait_all(in_events, -1ms);
+            } catch (std::exception& e) {
+                spdlog::error("zmq::poll: {}", e.what());
+            }
             for (size_t i = 0; i < n; i++) {
                 zmq::message_t msg;
 
@@ -549,26 +603,40 @@ class Client {
         spdlog::trace("poll thread stopped normally");
     }
 
+    // msg: ["async", token, args...]
     void handle_async(zmq::message_t& msg)
     {
         AsyncToken token;
+        std::string filter;
 
-        auto ec = Serde::deserialize(msg, token);
+        auto ec = Serde::deserialize(msg, filter, token);
+        assert(filter == kAsyncFilter);
 
         std::lock_guard<std::mutex> lock{async_q_lock_};
 
-        auto handler = async_q_.at(token);
+        if (async_q_.count(token)) {
+            auto handler = async_q_.at(token);
+            // TODO:
+            //   - recursive async call?
+            //   - deadlock?
+            //   - repeat callback?
+            handler(msg);
 
-        handler(msg);   // recursive async call? deadlock?
-
-        async_q_.erase(token);
+            // clear completed token
+            async_q_.erase(token);
+        } else {
+            // token from other/obsoleted clients?
+            spdlog::warn("unknown async token: [{}]", token);
+        }
     }
 
     void handle_event(zmq::message_t& msg)
     {
         Event event;
+        std::string filter;
 
-        auto ec = Serde::deserialize(msg, event);
+        auto ec = Serde::deserialize(msg, filter, event);
+        assert(filter == kEventFilter);
 
         std::lock_guard<std::mutex> lock{event_q_lock_};
 
@@ -621,12 +689,12 @@ class Client {
 
   private:
     // (logically) immutable resources
-    zmq::context_t ctx_{};
+    zmq::context_t ctx_{1};
     // socket for sync RPC calls
     zmq::socket_t sock_{ctx_, zmq::socket_type::req};
     // socket for async RPC calls
     zmq::socket_t async_sub_{ctx_, zmq::socket_type::sub};
-    // socket for subscribing events
+    // socket for subscribing events TODO: use one subscriber
     zmq::socket_t event_sub_{ctx_, zmq::socket_type::sub};
     // poll thread
     std::thread poll_thread_;
@@ -634,9 +702,11 @@ class Client {
     // mutable states
     std::atomic<bool> stop_{false};
 
+    // registered events
     std::mutex event_q_lock_{};
     EventQueue event_q_{};
 
+    // waiting async operations
     std::mutex async_q_lock_{};
     AsyncQueue async_q_{};
 };

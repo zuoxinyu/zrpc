@@ -4,29 +4,28 @@
 
 int main()
 {
+    using namespace std::chrono_literals;
+
+    spdlog::set_level(spdlog::level::trace);
+
     zrpc::Client cli;
     auto b = cli.call<bool>("test_method", 1, std::string("string"));
-    spdlog::info("test_method: {}", b);
 
     std::string hello = "hello, ";
     std::string world = "world";
-    auto hello_world = cli.call<std::string>("add_string", hello, world);
-    spdlog::info("hello_world: {}", hello_world);
-
-    auto sum = cli.call<int>("add_integer", 1, 2);
-    spdlog::info("sum: {}", sum);
 
     cli.call("void_method");
+    auto s = cli.call<std::string>("add_string", hello, world);
+    auto x = cli.call<int>("add_integer", 1, 2);
+    auto a = cli.call<int>("foo.add1", 2);
+    auto r = cli.call<int>("bar.virtual_method");
+    auto p = cli.call<int>("lambda");
+    auto cb = [](int i) { spdlog::info("async_method callback: {}", i); };
+    cli.async_call("async_method", cb, 1);
 
-    int a = cli.call<int>("foo.add1", 2);
-    spdlog::info("foo.add1: {}", a);
+    while (cli.poll()) {
+        ;
+    }
 
-    int r = cli.call<int>("bar.virtual_method");
-    spdlog::info("bar.virtual_method: {}", r);
-
-    r = cli.call<int>("lambda");
-    spdlog::info("lambda: {}", r);
-
-    cli.async_call(
-        "async_method", [](std::string s) {}, 1, 2, 3);
+    // std::this_thread::sleep_for(5s);
 }

@@ -52,12 +52,12 @@ struct Bar : public Foo {
     }
 };
 
-void async_method(int i, std::function<void(int)> cb)
+void async_method(std::function<void(int)> cb, int i)
 
 {
     using namespace std::chrono_literals;
     auto thread_fn = [cb](int arg) {
-        std::this_thread::sleep_for(2000ms);
+        std::this_thread::sleep_for(5000ms);
         cb(arg);
     };
     std::thread(thread_fn, i).detach();
@@ -66,10 +66,11 @@ void async_method(int i, std::function<void(int)> cb)
 
 int main()
 {
+    spdlog::set_level(spdlog::level::trace);
+
     zrpc::Server svr;
     Foo foo;
     Bar bar;
-    spdlog::set_level(spdlog::level::trace);
     svr.register_method("test_method", test_method);
     svr.register_method("void_method", void_method);
     svr.register_method("add_string", generic_add<std::string>);
@@ -79,8 +80,7 @@ int main()
     svr.register_method("lambda", [] { return 42; });
     // svr.register_method("pointer_args_fn", pointer_args_fn);
 
-
-    svr.register_async_method("async_method", async_method, [](int x) {});
+    svr.register_async_method("async_method", async_method);
 
     svr.serve();
     return 0;
