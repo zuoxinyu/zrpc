@@ -152,11 +152,19 @@ class Server {
     void serve() noexcept(false)
     {
         while (!stop_) {
-            zmq::message_t req, resp;
-            auto recv_result = sock_.recv(req, zmq::recv_flags::none);
+            zmq::message_t identity, empty, req, resp;
+            zmq::recv_result_t recv_result;
+
+            recv_result = sock_.recv(identity, zmq::recv_flags::none);
+            recv_result = sock_.recv(empty, zmq::recv_flags::none);
+            recv_result = sock_.recv(req, zmq::recv_flags::none);
 
             std::string method;
             auto ec = SerdeT::deserialize(req, method);
+
+            // sendmore
+            sock_.send(identity, zmq::send_flags::sndmore);
+            sock_.send(empty, zmq::send_flags::sndmore);
 
             // if (method == kHandshakeReply) {
             //     std::ignore = Serde::serialize(resp, kHandshake);
@@ -398,7 +406,7 @@ class Server {
     // (logically) immutable resources
     zmq::context_t ctx_{1};
     // socket for RPC calls
-    zmq::socket_t sock_{ctx_, zmq::socket_type::rep};
+    zmq::socket_t sock_{ctx_, zmq::socket_type::router};
     // socket for async RPC calls
     zmq::socket_t async_pub_{ctx_, zmq::socket_type::pub};
     // socket for publishing events
