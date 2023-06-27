@@ -143,7 +143,7 @@ class Server {
 
     Server(Server&) = delete;
 
-    int serve() noexcept(false)
+    [[noreturn]] void serve() noexcept(false)
     {
         // zmq::message_t hello;
         // std::ignore = Serde::serialize(hello, std::string("hello"));
@@ -168,7 +168,6 @@ class Server {
                 auto send_result = sock_.send(resp, zmq::send_flags::none);
             }
         }
-        return 0;
     }
 
     bool stop()
@@ -205,6 +204,8 @@ class Server {
     }
 
     // Fn(cb, args...)
+    //   - `cb`: the callback function, must be the first argument,
+    //     meets the same requirements with `Fn`
     template <typename Fn>
     void register_async_method(const char* method, Fn fn)
     {
@@ -418,7 +419,7 @@ class Client {
 
     ~Client()
     {
-        // TODO: waiting for onflying async tokens?
+        // TODO: waiting for pending async tokens?
         // e.g. waiting for `async_q_.empty() == true` ?
         stop_ = true;
 
@@ -427,7 +428,9 @@ class Client {
         }
     }
 
-    // poll style api, synchronous
+    // poll style api
+    //   - return value: number of pending async operations
+    //   - args: `timeout`
     int poll(std::chrono::milliseconds timeout = -1ms) { return poll_(timeout); }
 
     // Calling convention:
@@ -560,6 +563,7 @@ class Client {
     int poll_(std::chrono::milliseconds timeout)
     {
         zmq::message_t msg;
+        // FIXME: message lost would occur, need synchronization
         auto recv_result = async_sub_.recv(msg, zmq::recv_flags::none);
         handle_async(msg);
 

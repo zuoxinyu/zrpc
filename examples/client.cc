@@ -15,13 +15,20 @@ int main()
     std::string world = "world";
 
     cli.call("void_method");
-    auto s = cli.call<std::string>("add_string", hello, world);
-    auto x = cli.call<int>("add_integer", 1, 2);
-    auto a = cli.call<int>("foo.add1", 2);
-    auto r = cli.call<int>("bar.virtual_method");
-    auto p = cli.call<int>("lambda");
+    std::ignore = cli.call<std::string>("add_string", hello, world);
+    std::ignore = cli.call<int>("add_integer", 1, 2);
+    std::ignore = cli.call<double>("add_double", 3.14, 2.76);
+    std::ignore = cli.call<int>("foo.add1", 2);
+    std::ignore = cli.call<int>("bar.virtual_method");
+    std::ignore = cli.call<int>("lambda");
+    cli.call("default_parameter_fn", 1);
+    cli.call("default_parameter_fn", 1, 2);
+
     auto cb = [](int i) { spdlog::info("async_method callback: {}", i); };
     cli.async_call("async_method", cb, 1);
+    cli.async_call("async_method", cb, 2);
+    // auto recursive_cb = [&](int i) { cli.async_call("async_method", cb, 3); };
+    // cli.async_call("async_method", recursive_cb, 2);
 
     while (cli.poll()) {
         ;

@@ -24,7 +24,12 @@ T generic_add(T x, T y)
     return x + y;
 }
 
-void pointer_args_fn(int* m)
+void default_parameter_fn(int x, int y = 0)
+{
+    spdlog::info("default_parameter_fn called with: {}, {}", x, y);
+}
+
+void pointer_args_fn(int* m)   // unregisterable
 {
     spdlog::info("fn with pointer arg should not be registered");
 }
@@ -75,6 +80,8 @@ int main()
     svr.register_method("void_method", void_method);
     svr.register_method("add_string", generic_add<std::string>);
     svr.register_method("add_integer", generic_add<int>);
+    svr.register_method("add_double", generic_add<double>);
+    svr.register_method("default_parameter_fn", default_parameter_fn);
     svr.register_method("foo.add1", &foo, &Foo::add1);
     svr.register_method("bar.virtual_method", static_cast<Foo*>(&bar), &Foo::virtual_method);
     svr.register_method("lambda", [] { return 42; });
