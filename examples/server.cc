@@ -2,7 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include "zrpc.hpp"
+#include "server.hpp"
 
 using namespace std::chrono_literals;
 
@@ -62,7 +62,7 @@ void async_method(std::function<void(int)> cb, int i)
 {
     using namespace std::chrono_literals;
     auto thread_fn = [cb](int arg) {
-        std::this_thread::sleep_for(5000ms);
+        std::this_thread::sleep_for(3000ms);
         cb(arg);
     };
     std::thread(thread_fn, i).detach();

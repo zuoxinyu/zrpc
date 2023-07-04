@@ -1,7 +1,7 @@
 #include <spdlog/spdlog.h>
 #include <thread>
 
-#include "zrpc.hpp"
+#include "client.hpp"
 
 int main()
 {
