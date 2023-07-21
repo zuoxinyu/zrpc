@@ -1,10 +1,17 @@
 #include <thread>
 
+#include <magic_enum.hpp>
 #include <spdlog/spdlog.h>
 
 #include "server.hpp"
 
 using namespace std::chrono_literals;
+
+enum EnumType {
+    kState1 = 1,
+    kState2 = 2,
+    kState3 = 3,
+};
 
 bool test_method(int a, std::string s)
 {
@@ -27,6 +34,11 @@ T generic_add(T x, T y)
 void default_parameter_fn(int x, int y = 0)
 {
     spdlog::info("default_parameter_fn called with: {}, {}", x, y);
+}
+
+void enum_args_fn(EnumType e)
+{
+    spdlog::info("enum_args_fn arg: {}", magic_enum::enum_name(e));
 }
 
 void pointer_args_fn(int* m)   // unregisterable
@@ -85,6 +97,7 @@ int main()
     svr.register_method("foo.add1", &foo, &Foo::add1);
     svr.register_method("bar.virtual_method", static_cast<Foo*>(&bar), &Foo::virtual_method);
     svr.register_method("lambda", [] { return 42; });
+    svr.register_method("enum_args_fn", enum_args_fn);
     // svr.register_method("pointer_args_fn", pointer_args_fn);
 
     svr.register_async_method("async_method", async_method);

@@ -3,6 +3,12 @@
 
 #include "client.hpp"
 
+enum EnumType {
+    kState1 = 1,
+    kState2 = 2,
+    kState3 = 3,
+};
+
 int main()
 {
     using namespace std::chrono_literals;
@@ -28,6 +34,7 @@ int main()
     auto cb = [](int i) { spdlog::info("async_method callback: {}", i); };
     cli.async_call("async_method", cb, 1);
     cli.async_call("async_method", cb, 2);
+    cli.call("enum_args_fn", kState2);
     // auto recursive_cb = [&](int i) { cli.async_call("async_method", cb, 3); };
     // cli.async_call("async_method", recursive_cb, 2);
 

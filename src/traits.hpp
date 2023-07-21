@@ -63,17 +63,34 @@ struct any_pointer_type {
     static constexpr inline bool value = is_pointer_type<T>;
 };
 
+// bypass bug of vs17
+template <typename... Args>
+constexpr auto any_pointer_type_f()
+{
+    return (is_pointer_type<Args> || ...);
+}
+
 template <typename... Args>
 struct any_pointer_type<std::tuple<Args...>> {
-    static constexpr inline bool value = (is_pointer_type<Args> or ...);
+    static constexpr inline bool value = any_pointer_type_f<Args...>();
 };
+
+template <typename Enum>
+constexpr decltype(auto) to_underlying_if_enum(Enum e)
+{
+    if constexpr (std::is_enum_v<Enum>) {
+        return static_cast<typename std::underlying_type<Enum>::type>(e);
+    } else {
+        return e;
+    }
+}
 
 static_assert(any_pointer_type<std::tuple<int*, float>>::value);
 static_assert(!any_pointer_type<std::tuple<int, float>>::value);
 
 template <typename Fn>
 constexpr inline bool is_registerable =
-    is_serializable_type<typename fn_traits<Fn>::return_type>::value and
+    is_serializable_type<typename fn_traits<Fn>::return_type>::value &&
     !any_pointer_type<typename fn_traits<Fn>::tuple_type>::value;
 
 }   // namespace zrpc::detail

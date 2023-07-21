@@ -99,7 +99,7 @@ struct Serde {
     {
         try {
             msgpack::Packer packer;
-            (packer.process(args), ...);
+            packer.process(detail::to_underlying_if_enum(args)...);
             msg = {packer.vector().data(), packer.vector().size()};
             return {};
         } catch (std::error_code ec) {
@@ -114,7 +114,18 @@ struct Serde {
         try {
             msgpack::Unpacker unpacker(static_cast<const uint8_t*>(req.data()),
                                        static_cast<const size_t>(req.size()));
-            (unpacker.process(args), ...);
+
+            auto process = [&](auto& arg) {
+                using T = std::remove_reference_t<decltype(arg)>;
+                if constexpr (std::is_enum_v<T>) {
+                    typename std::underlying_type<T>::type tmp;
+                    unpacker.process(tmp);
+                    arg = static_cast<T>(tmp);
+                } else {
+                    unpacker.process(arg);
+                }
+            };
+            (process(args), ...);
             return {};
         } catch (std::error_code ec) {
             return ec;
