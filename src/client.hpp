@@ -131,7 +131,7 @@ class Client {
             };
 
             {
-                std::lock_guard<std::mutex> lock{async_q_lock_};
+                std::lock_guard<std::recursive_mutex> lock{async_q_lock_};
                 async_q_.insert({token, std::move(handler)});
             }
         }
@@ -200,7 +200,7 @@ class Client {
         auto recv_result = async_sub_.recv(msg, zmq::recv_flags::none);
         handle_async(msg);
 
-        std::lock_guard<std::mutex> lock{async_q_lock_};
+        std::lock_guard<std::recursive_mutex> lock{async_q_lock_};
         return async_q_.size();
     }
 
@@ -249,7 +249,7 @@ class Client {
         auto ec = Serde::deserialize(msg, filter, token);
         assert(filter == kAsyncFilter);
 
-        std::lock_guard<std::mutex> lock{async_q_lock_};
+        std::lock_guard<std::recursive_mutex> lock{async_q_lock_};
 
         if (async_q_.count(token)) {
             auto handler = async_q_.at(token);
@@ -345,7 +345,7 @@ class Client {
     EventQueue event_q_{};
 
     // waiting async operations
-    std::mutex async_q_lock_{};
+    std::recursive_mutex async_q_lock_{};
     AsyncQueue async_q_{};
     std::atomic<bool> async_sub_connected_{false};
 };

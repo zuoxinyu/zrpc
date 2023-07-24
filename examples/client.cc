@@ -34,9 +34,10 @@ int main()
     auto cb = [](int i) { spdlog::info("async_method callback: {}", i); };
     cli.async_call("async_method", cb, 1);
     cli.async_call("async_method", cb, 2);
+    cli.async_call("async_method", cb, 3);
     cli.call("enum_args_fn", kState2);
-    // auto recursive_cb = [&](int i) { cli.async_call("async_method", cb, 3); };
-    // cli.async_call("async_method", recursive_cb, 2);
+    auto recursive_cb = [&](int i) { cli.async_call("async_method", cb, 3); };
+    cli.async_call("async_method", recursive_cb, 2);
 
     while (cli.poll()) {
         ;

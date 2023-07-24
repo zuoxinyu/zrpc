@@ -1,7 +1,7 @@
 #include <thread>
 
-#include <magic_enum.hpp>
 #include <spdlog/spdlog.h>
+#include <magic_enum.hpp>
 
 #include "server.hpp"
 
