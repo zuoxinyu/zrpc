@@ -90,6 +90,20 @@ static const std::string kEventFilter = "";
 static const std::string kHandshake = "hello";
 static const std::string kHandshakeReply = "hi";
 
+template <typename T, std::enable_if_t<!std::is_enum_v<T>, bool> = true>
+static auto process_one(msgpack::Unpacker& unpacker, T& arg) {
+  unpacker.process(arg);
+}
+
+template <typename Enum, std::enable_if_t<std::is_enum_v<Enum>, bool> = true>
+static auto process_one(msgpack::Unpacker& unpacker, Enum& arg) {
+  using T = typename std::underlying_type<Enum>::type;
+  T tmp;
+  unpacker.process(tmp);
+  arg = static_cast<Enum>(tmp);
+}
+
+
 // default [De]serialize implementation
 // TODO: make it a custom point in a better way
 struct Serde {
@@ -115,6 +129,7 @@ struct Serde {
             msgpack::Unpacker unpacker(static_cast<const uint8_t*>(req.data()),
                                        static_cast<const size_t>(req.size()));
 
+#if 0 
             auto process = [&](auto& arg) {
                 using T = std::remove_reference_t<decltype(arg)>;
                 if constexpr (std::is_enum_v<T>) {
@@ -126,6 +141,8 @@ struct Serde {
                 }
             };
             (process(args), ...);
+#endif
+            (process_one(unpacker, args), ...);
             return {};
         } catch (std::error_code ec) {
             return ec;

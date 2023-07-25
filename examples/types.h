@@ -31,7 +31,7 @@ struct fmt::formatter<EnumType> {
 template <>
 struct fmt::formatter<EnumClass> {
     constexpr auto parse(format_parse_context ctx) { return ctx.begin(); }
-    auto format(const EnumClass& ec, format_context& ctx)
+    auto format(const EnumClass& ec, format_context& ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", magic_enum::enum_name(ec));
     }
@@ -39,7 +39,7 @@ struct fmt::formatter<EnumClass> {
 template <>
 struct fmt::formatter<StructType> {
     constexpr auto parse(format_parse_context ctx) { return ctx.begin(); }
-    auto format(const StructType& st, format_context& ctx)
+    auto format(const StructType& st, format_context& ctx) const
     {
         return fmt::format_to(ctx.out(), "StructType{{error: {}, msg: \"{}\"}}", st.error, st.msg);
     }
