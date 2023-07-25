@@ -13,10 +13,18 @@ find_package(magic_enum)
 add_definitions(-DZMQ_BUILD_DRAFT_API=1)
 add_definitions(-DZMQ_HAVE_POLLER=1)
 
+set(LIBS
+    cppzmq-static
+    libzmq-static
+    fmt::fmt-header-only
+    spdlog::spdlog_header_only
+    magic_enum::magic_enum
+)
+
 add_executable(server examples/server.cc)
 target_include_directories(server PRIVATE src)
-target_link_libraries(server libzmq-static spdlog::spdlog magic_enum::magic_enum)
+target_link_libraries(server ${LIBS})
 
 add_executable(client examples/client.cc)
 target_include_directories(client PRIVATE src)
-target_link_libraries(client libzmq-static spdlog::spdlog magic_enum::magic_enum)
+target_link_libraries(client ${LIBS})
