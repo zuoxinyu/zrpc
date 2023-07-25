@@ -23,7 +23,7 @@ struct StructType {
 template <>
 struct fmt::formatter<EnumType> {
     constexpr auto parse(format_parse_context ctx) { return ctx.begin(); }
-    auto format(const EnumType& ec, format_context& ctx)
+    auto format(const EnumType& ec, format_context& ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", magic_enum::enum_name(ec));
     }

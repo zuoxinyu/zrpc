@@ -15,8 +15,8 @@ add_definitions(-DZMQ_HAVE_POLLER=1)
 
 add_executable(server examples/server.cc)
 target_include_directories(server PRIVATE src)
-target_link_libraries(server zmq spdlog::spdlog magic_enum::magic_enum)
+target_link_libraries(server libzmq-static spdlog::spdlog magic_enum::magic_enum)
 
 add_executable(client examples/client.cc)
 target_include_directories(client PRIVATE src)
-target_link_libraries(client zmq spdlog::spdlog magic_enum::magic_enum)
+target_link_libraries(client libzmq-static spdlog::spdlog magic_enum::magic_enum)
