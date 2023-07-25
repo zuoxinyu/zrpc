@@ -2,12 +2,7 @@
 #include <thread>
 
 #include "client.hpp"
-
-enum EnumType {
-    kState1 = 1,
-    kState2 = 2,
-    kState3 = 3,
-};
+#include "types.h"
 
 int main()
 {
@@ -36,12 +31,12 @@ int main()
     cli.async_call("async_method", cb, 2);
     cli.async_call("async_method", cb, 3);
     cli.call("enum_args_fn", kState2);
+    cli.call("enum_class_fn", EnumClass::kStep2);
+    cli.call("struct_args_fn", StructType{1, "error msg"});
     auto recursive_cb = [&](int i) { cli.async_call("async_method", cb, 3); };
     cli.async_call("async_method", recursive_cb, 2);
 
-    while (cli.poll()) {
-        ;
-    }
+    while (cli.poll()) {}
 
     // std::this_thread::sleep_for(5s);
 }
