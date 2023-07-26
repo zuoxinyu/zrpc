@@ -26,6 +26,7 @@ class Server {
         async_pub_.bind(kAsyncEndpoint);
         event_pub_.bind(kEventEndpoint);
         spdlog::info("svr bind to {}", kEndpoint);
+        register_method("list_methods", this, &Server::list_methods);
     }
 
     Server(Server&) = delete;
@@ -281,6 +282,20 @@ class Server {
         zmq::message_t hello;
         std::ignore = Serde::serialize(hello, kHandshake);
         async_pub_.send(hello, zmq::send_flags::none);
+    }
+
+    std::vector<std::string> list_methods()
+    {
+        std::vector<std::string> methods;
+        std::transform(routes_.cbegin(),              //
+                       routes_.cend(),                //
+                       std::back_inserter(methods),   //
+                       [](const auto& pair) { return pair.first; });
+        std::transform(async_routes_.cbegin(),
+                       async_routes_.cend(),
+                       std::back_inserter(methods),
+                       [](const auto& pair) { return pair.first; });
+        return methods;
     }
 
   private:

@@ -11,6 +11,8 @@ int main()
     spdlog::set_level(spdlog::level::trace);
 
     zrpc::Client cli;
+    auto methods = cli.call<std::vector<std::string>>("list_methods");
+
     auto b = cli.call<bool>("test_method", 1, std::string("string"));
 
     std::string hello = "hello, ";
