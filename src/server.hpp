@@ -113,17 +113,13 @@ class Server {
     {
         zmq::message_t ret;
         try {
-            auto fn = routes_.at(method);
+            auto& fn = routes_.at(method);
             return fn(msg);
-        } catch (std::out_of_range& e) {
-            spdlog::error("method: [{}] not found", method);
-            std::ignore = SerdeT::serialize(ret, RPCError::kBadMethod);
         } catch (std::exception& e) {
             spdlog::error("unknown error during invoking method [{}]: {}", method, e.what());
             std::ignore = SerdeT::serialize(ret, RPCError::kUnknown);
+            return ret;
         }
-
-        return ret;
     }
 
     [[nodiscard]] auto async_call(const std::string& method, const zmq::message_t& msg)
@@ -136,17 +132,13 @@ class Server {
         std::ignore = SerdeT::deserialize(msg, _method, token);
 
         try {
-            auto fn = async_routes_.at(method);
+            auto& fn = async_routes_[method];
             return fn(msg);
-        } catch (std::out_of_range& e) {
-            spdlog::error("method: [{}] not found", method);
-            std::ignore = SerdeT::serialize(ret, RPCError::kBadMethod);
         } catch (std::exception& e) {
             spdlog::error("unknown error during invoking method [{}]: {}", method, e.what());
             std::ignore = SerdeT::serialize(ret, RPCError::kUnknown);
+            return ret;
         }
-
-        return ret;
     }
 
     template <typename Fn>

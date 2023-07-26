@@ -46,10 +46,17 @@ void pointer_args_fn(int* m)   // unregisterable
     spdlog::info("fn with pointer arg should not be registered");
 }
 
+void reference_args_fn(int& m)   // unregisterable
+{
+    spdlog::info("fn with pointer arg should not be registered");
+}
+
 void struct_args_fn(StructType st)
 {
     spdlog::info("struct_args_fn arg: {}", st);
 }
+
+void tuple_args_fn(std::pair<int, float> p) {}
 
 struct Foo {
     int add1(int x)
@@ -105,7 +112,9 @@ int main()
     svr.register_method("enum_args_fn", enum_args_fn);
     svr.register_method("enum_class_fn", enum_class_fn);
     svr.register_method("struct_args_fn", struct_args_fn);
+    // svr.register_method("tuple_args_fn", tuple_args_fn);
     // svr.register_method("pointer_args_fn", pointer_args_fn);
+    svr.register_method("reference_args_fn", reference_args_fn);
 
     svr.register_async_method("async_method", async_method);
 

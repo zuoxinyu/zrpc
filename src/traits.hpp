@@ -49,14 +49,9 @@ struct tp_traits<std::tuple<Car, Cdr...>> {
     using cdr = std::tuple<Cdr...>;
 };
 
-// TODO: whether can be serialized/deserialized to msgpack
 template <typename T>
-struct is_serializable_type {
-    static constexpr bool value = true;
-};
-
-template <typename T>
-constexpr inline bool is_pointer_type = std::is_pointer_v<remove_cvref_t<T>>;
+constexpr inline bool is_pointer_type =
+    std::is_pointer_v<remove_cvref_t<T>> || std::is_reference_v<T>;
 
 template <typename T>
 struct any_pointer_type {
@@ -87,6 +82,12 @@ constexpr decltype(auto) to_underlying_if_enum(Enum e)
 
 static_assert(any_pointer_type<std::tuple<int*, float>>::value);
 static_assert(!any_pointer_type<std::tuple<int, float>>::value);
+
+// TODO: whether can be serialized/deserialized to msgpack
+template <typename T>
+struct is_serializable_type {
+    static constexpr bool value = !std::is_pointer_v<T> && !std::is_reference_v<T>;
+};
 
 template <typename Fn>
 constexpr inline bool is_registerable =
