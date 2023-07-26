@@ -72,6 +72,8 @@ class Client {
                 RPCError code;
                 auto ec = SerdeT::deserialize(resp, code);
                 if (code != RPCError::kNoError) {
+                    spdlog::error(
+                        "client call {}{} error: {}", method, std::make_tuple(args...), code);
                     throw code;
                 }
                 spdlog::trace("client call {}{} -> void", method, std::make_tuple(args...));
@@ -82,6 +84,8 @@ class Client {
                 ReturnType ret{};
                 auto ec = SerdeT::deserialize(resp, code, ret);
                 if (code != RPCError::kNoError) {
+                    spdlog::error(
+                        "client call {}{} error: {}", method, std::make_tuple(args...), code);
                     throw code;
                 }
                 spdlog::trace("client call {}{} -> {}", method, std::make_tuple(args...), ret);
@@ -143,6 +147,8 @@ class Client {
                 RPCError code;
                 auto ec = SerdeT::deserialize(resp, code);
                 if (code != RPCError::kNoError) {
+                    spdlog::error(
+                        "client call {}{} error: {}", method, std::make_tuple(args...), code);
                     throw code;
                 }
                 spdlog::trace(
@@ -154,6 +160,8 @@ class Client {
                 ReturnType ret{};
                 auto ec = SerdeT::deserialize(resp, code, ret);
                 if (code != RPCError::kNoError) {
+                    spdlog::error(
+                        "client call {}{} error: {}", method, std::make_tuple(args...), code);
                     throw code;
                 }
                 spdlog::trace("client async call[{}] {}{} -> {}",

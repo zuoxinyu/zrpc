@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <fmt/ranges.h>
+#include <magic_enum.hpp>
 #include <spdlog/spdlog.h>
 #include <zmq.hpp>
 
@@ -64,6 +65,17 @@ inline void Unpacker::unpack_type<zrpc::RPCError>(zrpc::RPCError& e)
 }
 }   // namespace msgpack
 
+namespace fmt {
+template <>
+struct formatter<zrpc::RPCError> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    auto format(const zrpc::RPCError& ec, format_context& ctx) const
+    {
+        return fmt::format_to(ctx.out(), "{}", magic_enum::enum_name(ec));
+    }
+};
+}   // namespace fmt
+
 namespace std {
 template <>
 struct is_error_code_enum<zrpc::RPCError> : public true_type {};
@@ -91,16 +103,18 @@ static const std::string kHandshake = "hello";
 static const std::string kHandshakeReply = "hi";
 
 template <typename T, std::enable_if_t<!std::is_enum_v<T>, bool> = true>
-static auto process_one(msgpack::Unpacker& unpacker, T& arg) {
-  unpacker.process(arg);
+static auto process_one(msgpack::Unpacker& unpacker, T& arg)
+{
+    unpacker.process(arg);
 }
 
 template <typename Enum, std::enable_if_t<std::is_enum_v<Enum>, bool> = true>
-static auto process_one(msgpack::Unpacker& unpacker, Enum& arg) {
-  using T = typename std::underlying_type<Enum>::type;
-  T tmp;
-  unpacker.process(tmp);
-  arg = static_cast<Enum>(tmp);
+static auto process_one(msgpack::Unpacker& unpacker, Enum& arg)
+{
+    using T = typename std::underlying_type<Enum>::type;
+    T tmp;
+    unpacker.process(tmp);
+    arg = static_cast<Enum>(tmp);
 }
 
 
