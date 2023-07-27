@@ -8,6 +8,7 @@ find_package(ZeroMQ)
 find_package(cppzmq)
 find_package(spdlog)
 find_package(fmt)
+find_package(nameof)
 find_package(magic_enum)
 
 add_definitions(-DZMQ_BUILD_DRAFT_API=1)
@@ -19,6 +20,7 @@ set(LIBS
     fmt::fmt-header-only
     spdlog::spdlog_header_only
     magic_enum::magic_enum
+    nameof::nameof
 )
 
 add_executable(server examples/server.cc)

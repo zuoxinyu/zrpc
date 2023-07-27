@@ -11,10 +11,12 @@ using remove_cvref_t = std::remove_cv_t<std::remove_reference_t<T>>;
 template <typename>
 struct fn_traits;
 
-template <typename Fn>   // overloaded operator () (e.g. std::function)
+// overloaded operator () (e.g. std::function)
+template <typename Fn>
 struct fn_traits : fn_traits<decltype(&std::remove_reference_t<Fn>::operator())> {};
 
-template <typename ReturnType, typename... Args>   // Free functions
+// free functions
+template <typename ReturnType, typename... Args>
 struct fn_traits<ReturnType(Args...)> {
     using tuple_type = std::tuple<Args...>;
 
@@ -26,7 +28,8 @@ struct fn_traits<ReturnType(Args...)> {
     using return_type = ReturnType;
 };
 
-template <typename ReturnType, typename... Args>   // Function pointers
+// function pointers
+template <typename ReturnType, typename... Args>
 struct fn_traits<ReturnType (*)(Args...)> : fn_traits<ReturnType(Args...)> {};
 
 // member functions

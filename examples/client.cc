@@ -38,6 +38,12 @@ int main()
     auto recursive_cb = [&](int i) { cli.async_call("async_method", cb, 3); };
     cli.async_call("async_method", recursive_cb, 2);
 
+    try {
+        cli.call("nonexist");
+    } catch (zrpc::RPCError ec) {
+        spdlog::error("failed: {}", static_cast<uint32_t>(ec));
+    }
+
     while (cli.poll()) {}
 
     // std::this_thread::sleep_for(5s);

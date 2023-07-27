@@ -3,6 +3,8 @@
 
 #include "zrpc.hpp"
 
+#include <nameof.hpp>
+
 namespace zrpc {
 
 using detail::fn_traits;
@@ -12,9 +14,12 @@ template <typename SerdeT = Serde>
 class Server {
   public:
     using DispatcherFn = std::function<const zmq::message_t(const zmq::message_t&)>;
-    using AsyncDispatcherFn = std::function<const zmq::message_t(const zmq::message_t&)>;
-    using Dispatcher = std::map<std::string, DispatcherFn>;
-    using AsyncDispatcher = std::map<std::string, AsyncDispatcherFn>;
+    struct RegisteredFn {
+        std::string name;
+        DispatcherFn fn;
+    };
+    using Dispatcher = std::map<std::string, RegisteredFn>;
+    using AsyncDispatcher = std::map<std::string, RegisteredFn>;
 
     Server(const std::string& endpoint = kEndpoint)
     {
@@ -87,7 +92,8 @@ class Server {
         static_assert(detail::is_registerable<Fn>,
                       "cannot register function due to missing requirements");
         // constexpr map?
-        routes_[method] = [this, fn](const auto& msg) { return proxy_call(fn, msg); };
+        routes_[method] = RegisteredFn{std::string(nameof::nameof_full_type<Fn>()),
+                                       [this, fn](const auto& msg) { return proxy_call(fn, msg); }};
     }
 
     template <typename Fn, typename Class>
@@ -95,7 +101,9 @@ class Server {
     {
         static_assert(detail::is_registerable<Fn>,
                       "cannot register function due to missing requirements");
-        routes_[method] = [this, that, fn](const auto& msg) { return proxy_call(fn, that, msg); };
+        routes_[method] =
+            RegisteredFn{std::string(nameof::nameof_full_type<Fn>()),
+                         [this, that, fn](const auto& msg) { return proxy_call(fn, that, msg); }};
     }
 
     // Fn(cb, args...)
@@ -104,7 +112,9 @@ class Server {
     template <typename Fn>
     void register_async_method(const char* method, Fn fn)
     {
-        async_routes_[method] = [this, fn](const auto& msg) { return proxy_async_call(fn, msg); };
+        async_routes_[method] =
+            RegisteredFn{std::string(nameof::nameof_full_type<Fn>()),
+                         [this, fn](const auto& msg) { return proxy_async_call(fn, msg); }};
     }
 
   private:
@@ -114,7 +124,7 @@ class Server {
         zmq::message_t ret;
         try {
             auto& fn = routes_.at(method);
-            return fn(msg);
+            return fn.fn(msg);
         } catch (std::exception& e) {
             spdlog::error("unknown error during invoking method [{}]: {}", method, e.what());
             std::ignore = SerdeT::serialize(ret, RPCError::kUnknown);
@@ -133,7 +143,7 @@ class Server {
 
         try {
             auto& fn = async_routes_[method];
-            return fn(msg);
+            return fn.fn(msg);
         } catch (std::exception& e) {
             spdlog::error("unknown error during invoking method [{}]: {}", method, e.what());
             std::ignore = SerdeT::serialize(ret, RPCError::kUnknown);
@@ -279,14 +289,16 @@ class Server {
     std::vector<std::string> list_methods()
     {
         std::vector<std::string> methods;
-        std::transform(routes_.cbegin(),              //
-                       routes_.cend(),                //
-                       std::back_inserter(methods),   //
-                       [](const auto& pair) { return pair.first; });
-        std::transform(async_routes_.cbegin(),
-                       async_routes_.cend(),
-                       std::back_inserter(methods),
-                       [](const auto& pair) { return pair.first; });
+        std::transform(
+            routes_.cbegin(),              //
+            routes_.cend(),                //
+            std::back_inserter(methods),   //
+            [](const auto& pair) { return fmt::format("{}: {}", pair.first, pair.second.name); });
+        std::transform(
+            async_routes_.cbegin(),        //
+            async_routes_.cend(),          //
+            std::back_inserter(methods),   //
+            [](const auto& pair) { return fmt::format("{}: {}", pair.first, pair.second.name); });
         return methods;
     }
 

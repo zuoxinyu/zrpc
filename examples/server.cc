@@ -108,13 +108,13 @@ int main()
     svr.register_method("default_parameter_fn", default_parameter_fn);
     svr.register_method("foo.add1", &foo, &Foo::add1);
     svr.register_method("bar.virtual_method", static_cast<Foo*>(&bar), &Foo::virtual_method);
-    svr.register_method("lambda", [] { return 42; });
+    svr.register_method("lambda", [bar] { return 42; });
     svr.register_method("enum_args_fn", enum_args_fn);
     svr.register_method("enum_class_fn", enum_class_fn);
     svr.register_method("struct_args_fn", struct_args_fn);
     // svr.register_method("tuple_args_fn", tuple_args_fn);
     // svr.register_method("pointer_args_fn", pointer_args_fn);
-    svr.register_method("reference_args_fn", reference_args_fn);
+    // svr.register_method("reference_args_fn", reference_args_fn);
 
     svr.register_async_method("async_method", async_method);
 
