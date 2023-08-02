@@ -165,4 +165,41 @@ struct Serde {
 };
 
 }   // namespace zrpc
+
+#define DERIVE_FORMMATABLE(enum_type)                                          \
+    namespace fmt {                                                            \
+    template <>                                                                \
+    struct formatter<enum_type> {                                              \
+        constexpr auto parse(format_parse_context& ctx)                        \
+        {                                                                      \
+            return ctx.begin();                                                \
+        }                                                                      \
+        auto format(const enum_type& ec, format_context& ctx) const            \
+        {                                                                      \
+            return fmt::format_to(ctx.out(), "{}", magic_enum::enum_name(ec)); \
+        }                                                                      \
+    };                                                                         \
+    }
+
+#define DERIVE_PACKABLE(pod_type)                                       \
+    namespace msgpack {                                                 \
+    template <>                                                         \
+    inline void Packer::pack_type<pod_type>(const pod_type& s)          \
+    {                                                                   \
+        constexpr size_t sz = sizeof(pod_type);                         \
+        std::array<uint8_t, sz> vec;                                    \
+        std::memcpy(&vec[0], reinterpret_cast<const uint8_t*>(&s), sz); \
+        pack_type(vec);                                                 \
+    }                                                                   \
+                                                                        \
+    template <>                                                         \
+    inline void Unpacker::unpack_type<pod_type>(pod_type & s)           \
+    {                                                                   \
+        constexpr size_t sz = sizeof(pod_type);                         \
+        std::array<uint8_t, sz> vec;                                    \
+        unpack_type(vec);                                               \
+        std::memcpy(reinterpret_cast<uint8_t*>(&s), &vec[0], sz);       \
+    }                                                                   \
+    }
+
 #endif   // #ifndef _ZRPC_HPP_

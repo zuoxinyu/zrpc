@@ -92,6 +92,16 @@ void async_method(std::function<void(int)> cb, int i)
     std::thread(thread_fn, i).detach();
 }
 
+bool async_return_method(std::function<void(int)> cb, int i)
+{
+    using namespace std::chrono_literals;
+    auto thread_fn = [cb](int arg) {
+        std::this_thread::sleep_for(3000ms);
+        cb(arg);
+    };
+    std::thread(thread_fn, i).detach();
+    return true;
+}
 
 int main()
 {
@@ -117,6 +127,7 @@ int main()
     // svr.register_method("reference_args_fn", reference_args_fn);
 
     svr.register_async_method("async_method", async_method);
+    svr.register_async_method("async_return_method", async_return_method);
 
     svr.serve();
     return 0;
