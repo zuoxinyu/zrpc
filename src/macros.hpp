@@ -50,7 +50,7 @@
     )
 #define _MAP() MAP
 
-#define DERIVE_FORMMATABLE_ENUM(enum_type)                                     \
+#define DERIVE_FORMATTABLE_ENUM(enum_type)                                     \
     namespace fmt {                                                            \
     template <>                                                                \
     struct formatter<enum_type> {                                              \
@@ -66,27 +66,27 @@
     }
 
 #define FIELDOF(x) s.x,
-#define FIELDFMT(x) #x ": {},"
+#define FIELDFMT(x) #x ": {}, "
 
-#define DERIVE_FORMMATABLE_STRUCT(structt, ...)                                          \
-    namespace fmt {                                                                      \
-    template <>                                                                          \
-    struct formatter<structt> {                                                          \
-        constexpr auto parse(format_parse_context& ctx)                                  \
-        {                                                                                \
-            return ctx.begin();                                                          \
-        }                                                                                \
-        auto format(const structt& s, format_context& ctx) const                         \
-        {                                                                                \
-            return fmt::format_to(ctx.out(),                                             \
-                                  #structt "{{ " EVAL(MAP(FIELDFMT, __VA_ARGS__)) " }}", \
-                                  EVAL(MAP(FIELDOF, __VA_ARGS__)));                      \
-        }                                                                                \
-    };                                                                                   \
+#define DERIVE_FORMATTABLE_STRUCT(structt, ...)                                         \
+    namespace fmt {                                                                     \
+    template <>                                                                         \
+    struct formatter<structt> {                                                         \
+        constexpr auto parse(format_parse_context& ctx)                                 \
+        {                                                                               \
+            return ctx.begin();                                                         \
+        }                                                                               \
+        auto format(const structt& s, format_context& ctx) const                        \
+        {                                                                               \
+            return fmt::format_to(ctx.out(),                                            \
+                                  #structt "{{ " EVAL(MAP(FIELDFMT, __VA_ARGS__)) "}}", \
+                                  EVAL(MAP(FIELDOF, __VA_ARGS__)));                     \
+        }                                                                               \
+    };                                                                                  \
     }
 
 
-#define DERIVE_PACKABLE(pod_type)                                       \
+#define DERIVE_PACKABLE_STRUCT(pod_type)                                \
     namespace msgpack {                                                 \
     template <>                                                         \
     inline void Packer::pack_type<pod_type>(const pod_type& s)          \
