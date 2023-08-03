@@ -68,22 +68,21 @@
 #define FIELDOF(x) s.x,
 #define FIELDFMT(x) #x ": {},"
 
-#define DERIVE_FORMMATABLE_STRUCT(structt, ...)                           \
-    namespace fmt {                                                       \
-    template <>                                                           \
-    struct formatter<structt> {                                           \
-        constexpr auto parse(format_parse_context& ctx)                   \
-        {                                                                 \
-            return ctx.begin();                                           \
-        }                                                                 \
-        auto format(const structt& s, format_context& ctx) const          \
-        {                                                                 \
-            return fmt::format_to(ctx.out(),                              \
-                                  #structt "{{ ",                         \
-                                  EVAL(MAP(FIELDFMT, __VA_ARGS__)) " }}", \
-                                  EVAL(MAP(FIELDOF, __VA_ARGS__)));       \
-        }                                                                 \
-    };                                                                    \
+#define DERIVE_FORMMATABLE_STRUCT(structt, ...)                                          \
+    namespace fmt {                                                                      \
+    template <>                                                                          \
+    struct formatter<structt> {                                                          \
+        constexpr auto parse(format_parse_context& ctx)                                  \
+        {                                                                                \
+            return ctx.begin();                                                          \
+        }                                                                                \
+        auto format(const structt& s, format_context& ctx) const                         \
+        {                                                                                \
+            return fmt::format_to(ctx.out(),                                             \
+                                  #structt "{{ " EVAL(MAP(FIELDFMT, __VA_ARGS__)) " }}", \
+                                  EVAL(MAP(FIELDOF, __VA_ARGS__)));                      \
+        }                                                                                \
+    };                                                                                   \
     }
 
 
