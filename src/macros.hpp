@@ -86,21 +86,21 @@
     };                                                                                  \
     }
 
-#define DERIVE_FORMATTABLE_STRUCT_PRETTY(structt, ...)                                        \
-    namespace fmt {                                                                           \
-    template <>                                                                               \
-    struct formatter<structt> {                                                               \
-        constexpr auto parse(format_parse_context& ctx)                                       \
-        {                                                                                     \
-            return ctx.begin();                                                               \
-        }                                                                                     \
-        auto format(const structt& s, format_context& ctx) const                              \
-        {                                                                                     \
-            return fmt::format_to(ctx.out(),                                                  \
-                                  #structt "{{\n" EVAL(MAP(FIELDPRETTYFMT, __VA_ARGS__)) "}}", \
-                                  EVAL(MAP(FIELDOF, __VA_ARGS__)));                           \
-        }                                                                                     \
-    };                                                                                        \
+#define DERIVE_FORMATTABLE_STRUCT_PRETTY(structt, ...)                                          \
+    namespace fmt {                                                                             \
+    template <>                                                                                 \
+    struct formatter<structt> {                                                                 \
+        constexpr auto parse(format_parse_context& ctx)                                         \
+        {                                                                                       \
+            return ctx.begin();                                                                 \
+        }                                                                                       \
+        auto format(const structt& s, format_context& ctx) const                                \
+        {                                                                                       \
+            return fmt::format_to(ctx.out(),                                                    \
+                                  #structt " {{\n" EVAL(MAP(FIELDPRETTYFMT, __VA_ARGS__)) "}}", \
+                                  EVAL(MAP(FIELDOF, __VA_ARGS__)));                             \
+        }                                                                                       \
+    };                                                                                          \
     }
 
 #define DERIVE_PACKABLE_STRUCT(pod_type)                                \
