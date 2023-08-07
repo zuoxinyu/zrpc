@@ -117,6 +117,14 @@ class Server {
                          [this, fn](const auto& msg) { return proxy_async_call(fn, msg); }};
     }
 
+    template <typename... Args>
+    void publish_event(const Event& event, Args... args)
+    {
+        zmq::message_t ev;
+        std::ignore = Serde::serialize(ev, event, args...);
+        event_pub_.send(ev, zmq::send_flags::none);
+    }
+
   private:
     [[nodiscard]] auto call(const std::string& method, const zmq::message_t& msg)
         -> const zmq::message_t

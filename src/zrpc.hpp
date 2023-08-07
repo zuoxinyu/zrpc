@@ -86,7 +86,7 @@ namespace zrpc {
 using namespace std::chrono_literals;
 
 using Event = std::string;
-using EventHandler = std::function<bool(Event&)>;   // return bool to delete event?
+using EventHandler = std::function<bool(zmq::message_t&)>;   // return bool to delete event?
 using EventQueue = std::map<Event, EventHandler>;
 
 using AsyncCallbackArgs = zmq::message_t&;

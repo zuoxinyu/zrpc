@@ -46,7 +46,10 @@ class Client {
     // poll style api
     //   - return value: number of pending async operations
     //   - args: `timeout`
-    int poll(std::chrono::milliseconds timeout = -1ms) { return poll_async_sub(timeout); }
+    int poll(std::chrono::milliseconds timeout = -1ms)
+    {
+        return poll_async_sub(timeout) + poll_event_sub(timeout);
+    }
 
     // Calling convention:
     //   - send: [method, args...]
@@ -175,10 +178,26 @@ class Client {
     }
 
     // register an event, handler would be invoked on poll thread
-    inline auto register_event(const Event& event, EventHandler handler)
+    template <typename Callback>
+    inline auto register_event(Event event, Callback fn)
     {
         std::lock_guard lock{event_q_lock_};
 
+        using TupleType = typename fn_traits<Callback>::tuple_type;
+        EventHandler handler = [fn = std::move(fn)](zmq::message_t& msg) {
+            TupleType args{};
+            std::string event;
+
+            auto de = [&](auto&&... xs) { return Serde::deserialize(msg, event, xs...); };
+
+            // deserialize args
+            auto ec = std::apply(de, args);
+
+            // call real handler
+            bool unregister = std::apply(fn, args);
+
+            return unregister;
+        };
         event_q_[event] = std::move(handler);
     }
 
@@ -210,6 +229,14 @@ class Client {
 
         std::lock_guard lock{async_q_lock_};
         return async_q_.size();
+    }
+
+    int poll_event_sub(std::chrono::milliseconds timeout)
+    {
+        zmq::message_t msg;
+        auto recv_result = event_sub_.recv(msg, zmq::recv_flags::none);
+        handle_event(msg);
+        return 0;
     }
 
     // thread for handling async results and server events
@@ -278,10 +305,8 @@ class Client {
     void handle_event(zmq::message_t& msg)
     {
         Event event;
-        std::string filter;
 
-        auto ec = Serde::deserialize(msg, filter, event);
-        assert(filter == kEventFilter);
+        auto ec = Serde::deserialize(msg, event);
 
         std::lock_guard lock{event_q_lock_};
 
@@ -291,7 +316,7 @@ class Client {
 
         auto handler = event_q_.at(event);
 
-        bool unregister = !handler(event);
+        bool unregister = !handler(msg);
 
         if (unregister) {
             event_q_.erase(event);

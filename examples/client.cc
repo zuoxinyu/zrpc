@@ -38,6 +38,13 @@ int main()
     auto recursive_cb = [&](int i) { cli.async_call("async_method", cb, 3); };
     cli.async_call("async_method", recursive_cb, 2);
     cli.async_call<bool>("async_return_method", cb, 2);
+    cli.register_event("event1", [](std::string s, int i) -> bool {
+        spdlog::info("recv event: event1 with args: {}, {}", s, i);
+        return true;
+    });
+
+    cli.call("trigger_event");
+    cli.call("trigger_event");
 
     try {
         cli.call("nonexist");

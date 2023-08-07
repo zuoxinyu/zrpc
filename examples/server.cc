@@ -129,6 +129,12 @@ int main()
     svr.register_async_method("async_method", async_method);
     svr.register_async_method("async_return_method", async_return_method);
 
+    svr.register_method("trigger_event", [&] {
+        using namespace std::chrono_literals;
+        std::this_thread::sleep_for(100ms);
+        svr.publish_event("event1", std::string("event with string"), 10);
+    });
+
     svr.serve();
     return 0;
 }
