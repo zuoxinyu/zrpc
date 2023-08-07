@@ -46,10 +46,8 @@ class Client {
     // poll style api
     //   - return value: number of pending async operations
     //   - args: `timeout`
-    int poll(std::chrono::milliseconds timeout = -1ms)
-    {
-        return poll_async_sub(timeout) + poll_event_sub(timeout);
-    }
+    int poll(std::chrono::milliseconds timeout = -1ms) { return poll_async_sub(timeout); }
+    int poll_event() { return poll_event_sub(-1ms); }
 
     // Calling convention:
     //   - send: [method, args...]
@@ -235,12 +233,11 @@ class Client {
     {
         zmq::message_t msg;
         auto recv_result = event_sub_.recv(msg, zmq::recv_flags::none);
-        handle_event(msg);
-        return 0;
+        return handle_event(msg);
     }
 
     // thread for handling async results and server events
-    void poll_thread()
+    int poll_thread()
     {
         using namespace std::chrono_literals;
         zmq::poller_t<> poller;
@@ -276,7 +273,7 @@ class Client {
     }
 
     // msg: ["async", token, args...]
-    void handle_async(zmq::message_t& msg)
+    int handle_async(zmq::message_t& msg)
     {
         AsyncToken token;
         std::string filter;
@@ -296,13 +293,15 @@ class Client {
 
             // clear completed token
             async_q_.erase(token);
+            return 1;
         } else {
             // token from other/obsoleted clients?
             spdlog::warn("unknown async token: [{}]", token);
+            return 0;
         }
     }
 
-    void handle_event(zmq::message_t& msg)
+    int handle_event(zmq::message_t& msg)
     {
         Event event;
 
@@ -311,7 +310,7 @@ class Client {
         std::lock_guard lock{event_q_lock_};
 
         if (!event_q_.count(event)) {
-            return;
+            return 0;
         }
 
         auto handler = event_q_.at(event);
@@ -321,6 +320,7 @@ class Client {
         if (unregister) {
             event_q_.erase(event);
         }
+        return unregister ? 0 : 1;
     }
 
     // thread unsafety
