@@ -1,5 +1,4 @@
 #include <spdlog/spdlog.h>
-#include <thread>
 
 #include "client.hpp"
 #include "types.h"

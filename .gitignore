@@ -2,4 +2,5 @@ build/
 cppack/
 .clangd
 .cache
+vcpkg_installed
 compile_commands.json
