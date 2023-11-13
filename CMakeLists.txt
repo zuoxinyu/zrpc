@@ -5,7 +5,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS on)
 set(CMAKE_CXX_STANDARD 17)
 
 find_package(ZeroMQ)
-find_package(cppzmq)
+find_package(cppzmq CONFIG)
 find_package(spdlog)
 find_package(fmt)
 find_package(nameof)
@@ -24,9 +24,9 @@ set(LIBS
 )
 
 add_executable(server examples/server.cc)
-target_include_directories(server PRIVATE src)
+target_include_directories(server PRIVATE include)
 target_link_libraries(server ${LIBS})
 
 add_executable(client examples/client.cc)
-target_include_directories(client PRIVATE src)
+target_include_directories(client PRIVATE include)
 target_link_libraries(client ${LIBS})
