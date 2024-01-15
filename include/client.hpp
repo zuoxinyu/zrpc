@@ -3,6 +3,8 @@
 
 #include "zrpc.hpp"
 
+#include <random>
+
 namespace zrpc {
 
 using detail::fn_traits;

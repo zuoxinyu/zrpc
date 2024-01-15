@@ -42,9 +42,9 @@ class Server {
             zmq::message_t identity, empty, req, resp;
             zmq::recv_result_t recv_result;
 
-            recv_result = sock_.recv(identity, zmq::recv_flags::none);
-            recv_result = sock_.recv(empty, zmq::recv_flags::none);
-            recv_result = sock_.recv(req, zmq::recv_flags::none);
+            recv_result = sock_.recv(identity);
+            recv_result = sock_.recv(empty);
+            recv_result = sock_.recv(req);
 
             std::string method;
             auto ec = SerdeT::deserialize(req, method);
