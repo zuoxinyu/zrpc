@@ -34,6 +34,7 @@ int main()
     cli.call("enum_args_fn", kState2);
     cli.call("enum_class_fn", EnumClass::kStep2);
     cli.call("struct_args_fn", StructType{1, "error msg"});
+    auto pod = cli.call<Pod>("construct_pod", 1, 2, -1.f, -2.);
     auto recursive_cb = [&](int i) { cli.async_call("async_method", cb, 3); };
     cli.async_call("async_method", recursive_cb, 2);
     cli.async_call<bool>("async_return_method", cb, 2);

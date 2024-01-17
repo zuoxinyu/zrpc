@@ -3,21 +3,20 @@
     "configurePresets": [
         {
             "name": "default",
-            "binaryDir": "build",
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
             "binaryDir": "${sourceDir}/build",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": true,
-                "CMAKE_BUILD_TYPE": "Debug"
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
             },
             "generator": "Ninja"
         }
     ],
     "buildPresets": [
         {
-            "name": "debug",
-            "configurePreset": "debug",
-            "configuration": "Debug"
+            "name": "default",
+            "configurePreset": "default",
+            "configuration": "default"
         }
     ]
 }

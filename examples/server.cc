@@ -103,6 +103,11 @@ bool async_return_method(std::function<void(int)> cb, int i)
     return true;
 }
 
+Pod construct_pod(int i, uint8_t c, float f, double d)
+{
+    return Pod{i, c, f, d};
+}
+
 int main()
 {
     spdlog::set_level(spdlog::level::trace);
@@ -122,6 +127,7 @@ int main()
     svr.register_method("enum_args_fn", enum_args_fn);
     svr.register_method("enum_class_fn", enum_class_fn);
     svr.register_method("struct_args_fn", struct_args_fn);
+    svr.register_method("construct_pod", construct_pod);
     // svr.register_method("tuple_args_fn", tuple_args_fn);
     // svr.register_method("pointer_args_fn", pointer_args_fn);
     // svr.register_method("reference_args_fn", reference_args_fn);

@@ -1,6 +1,8 @@
+#include "pfr.hpp"
 #include <fmt/format.h>
 #include <magic_enum.hpp>
 
+#include "macros.hpp"
 #include "msgpack.hpp"
 
 enum EnumType {
@@ -20,6 +22,13 @@ struct StructType {
     std::string msg;
 };
 
+struct Pod {
+    int integer;
+    uint8_t charactor;
+    float floating;
+    double double_floating;
+};
+
 template <>
 struct fmt::formatter<EnumType> {
     constexpr auto parse(format_parse_context ctx) { return ctx.begin(); }
@@ -36,25 +45,6 @@ struct fmt::formatter<EnumClass> {
         return fmt::format_to(ctx.out(), "{}", magic_enum::enum_name(ec));
     }
 };
-template <>
-struct fmt::formatter<StructType> {
-    constexpr auto parse(format_parse_context ctx) { return ctx.begin(); }
-    auto format(const StructType& st, format_context& ctx) const
-    {
-        return fmt::format_to(ctx.out(), "StructType{{error: {}, msg: \"{}\"}}", st.error, st.msg);
-    }
-};
 
-template <>
-inline void msgpack::Packer::pack_type<StructType>(const StructType& e)
-{
-    pack_type(e.error);
-    pack_type(e.msg);
-}
-
-template <>
-inline void msgpack::Unpacker::unpack_type<StructType>(StructType& e)
-{
-    unpack_type(e.error);
-    unpack_type(e.msg);
-}
+DERIVE_ZRPC_STRUCT(Pod)
+DERIVE_ZRPC_STRUCT(StructType)

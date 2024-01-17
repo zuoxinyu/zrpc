@@ -1,5 +1,6 @@
 build/
 cppack/
+third_party/
 .clangd
 .cache
 vcpkg_installed
