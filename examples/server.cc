@@ -82,11 +82,12 @@ struct Bar : public Foo {
 };
 
 void async_method(std::function<void(int)> cb, int i)
-
 {
     using namespace std::chrono_literals;
     auto thread_fn = [cb](int arg) {
         std::this_thread::sleep_for(3000ms);
+        // this line make async callback correctly work, why?
+        fmt::println("async method invoking callback: {}", arg);
         cb(arg);
     };
     std::thread(thread_fn, i).detach();
