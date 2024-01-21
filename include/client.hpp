@@ -276,6 +276,7 @@ class Client {
             }
         }
         spdlog::trace("poll thread stopped normally");
+        return 0;
     }
 
     // msg: ["async", token, args...]

@@ -3,6 +3,7 @@
 #include <functional>
 #include <map>
 #include <type_traits>
+#include <utility>
 
 #include <fmt/ranges.h>
 #include <magic_enum.hpp>
@@ -27,9 +28,9 @@ class RPCError : public std::exception {
     RPCError(RPCErrorCode code, std::string what)
         : std::exception()
         , code_(code)
-        , what_(what)
+        , what_(std::move(what))
     {}
-    char const* what() const override { return what_.c_str(); }
+    const char* what() const noexcept override { return what_.c_str(); }
     RPCErrorCode code() const { return code_; }
 
   private:
