@@ -64,7 +64,7 @@ class Server {
                 auto resp = async_call(method, req);
                 auto send_result = sock_.send(resp, zmq::send_flags::none);
             } else {
-                std::ignore = Serde::serialize(resp, RPCError::kBadMethod);
+                std::ignore = Serde::serialize(resp, RPCErrorCode::kBadMethod);
                 auto send_result = sock_.send(resp, zmq::send_flags::none);
             }
         }
@@ -135,7 +135,7 @@ class Server {
             return fn.fn(msg);
         } catch (std::exception& e) {
             spdlog::error("unknown error during invoking method [{}]: {}", method, e.what());
-            std::ignore = SerdeT::serialize(ret, RPCError::kUnknown);
+            std::ignore = SerdeT::serialize(ret, RPCErrorCode::kUnknown);
             return ret;
         }
     }
@@ -154,7 +154,7 @@ class Server {
             return fn.fn(msg);
         } catch (std::exception& e) {
             spdlog::error("unknown error during invoking method [{}]: {}", method, e.what());
-            std::ignore = SerdeT::serialize(ret, RPCError::kUnknown);
+            std::ignore = SerdeT::serialize(ret, RPCErrorCode::kUnknown);
             return ret;
         }
     }
@@ -182,11 +182,11 @@ class Server {
                 // try catch?
                 auto ret = std::apply(fn, args);
                 spdlog::trace("invoke {}{} -> {}", method, args, ret);
-                std::ignore = SerdeT::serialize(resp, RPCError::kNoError, ret);
+                std::ignore = SerdeT::serialize(resp, RPCErrorCode::kNoError, ret);
             } else {
                 std::apply(fn, args);
                 spdlog::trace("invoke {}{} -> void", method, args);
-                std::ignore = SerdeT::serialize(resp, RPCError::kNoError);
+                std::ignore = SerdeT::serialize(resp, RPCErrorCode::kNoError);
             }
         }
         return resp;
@@ -216,11 +216,11 @@ class Server {
             if constexpr (!std::is_void_v<ReturnType>) {
                 auto ret = std::apply(bound_fn, args);
                 spdlog::trace("invoke {}{} -> {}", method, args, ret);
-                std::ignore = SerdeT::serialize(resp, RPCError::kNoError, ret);
+                std::ignore = SerdeT::serialize(resp, RPCErrorCode::kNoError, ret);
             } else {
                 std::apply(bound_fn, args);
                 spdlog::trace("invoke {}{} -> {}", method, args);
-                std::ignore = SerdeT::serialize(resp, RPCError::kNoError);
+                std::ignore = SerdeT::serialize(resp, RPCErrorCode::kNoError);
             }
         }
         return resp;
@@ -275,11 +275,11 @@ class Server {
                 // try catch?
                 auto ret = std::apply(fn, all_args);
                 spdlog::trace("invoke {}{} -> {}", method, args, ret);
-                std::ignore = SerdeT::serialize(resp, RPCError::kNoError, ret);
+                std::ignore = SerdeT::serialize(resp, RPCErrorCode::kNoError, ret);
             } else {
                 std::apply(fn, all_args);
                 spdlog::trace("invoke {}{} -> void", method, args);
-                std::ignore = SerdeT::serialize(resp, RPCError::kNoError);
+                std::ignore = SerdeT::serialize(resp, RPCErrorCode::kNoError);
             }
         }
         return resp;

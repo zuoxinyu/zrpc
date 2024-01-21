@@ -13,13 +13,28 @@
 #include "traits.hpp"
 
 namespace zrpc {
-enum class RPCError : uint32_t {
+enum class RPCErrorCode : uint32_t {
     kNoError = 0,
 
-    kBadPayload = 400,
-    kBadMethod = 404,
+    kBadPayload,
+    kBadMethod,
 
-    kUnknown = 500,
+    kUnknown,
+};
+
+class RPCError : public std::exception {
+  public:
+    RPCError(RPCErrorCode code, std::string what)
+        : std::exception()
+        , code_(code)
+        , what_(what)
+    {}
+    char const* what() const override { return what_.c_str(); }
+    RPCErrorCode code() const { return code_; }
+
+  private:
+    RPCErrorCode code_;
+    std::string what_;
 };
 
 struct RPCErrorCategory : public std::error_category {
@@ -27,11 +42,11 @@ struct RPCErrorCategory : public std::error_category {
 
     std::string message(int ec) const override
     {
-        switch (static_cast<zrpc::RPCError>(ec)) {
-        case RPCError::kNoError: return "(no error)"; break;
-        case RPCError::kBadPayload: return "bad payload"; break;
-        case RPCError::kBadMethod: return "bad method"; break;
-        case RPCError::kUnknown:
+        switch (static_cast<zrpc::RPCErrorCode>(ec)) {
+        case RPCErrorCode::kNoError: return "(no error)"; break;
+        case RPCErrorCode::kBadPayload: return "bad payload"; break;
+        case RPCErrorCode::kBadMethod: return "bad method"; break;
+        case RPCErrorCode::kUnknown:
         default: return "(unrecognized error)";
         }
     }
@@ -39,7 +54,7 @@ struct RPCErrorCategory : public std::error_category {
 
 const RPCErrorCategory theRPCErrorCategory{};
 
-inline std::error_code make_error_code(zrpc::RPCError e)
+inline std::error_code make_error_code(zrpc::RPCErrorCode e)
 {
     return {static_cast<int>(e), theRPCErrorCategory};
 }
@@ -47,24 +62,24 @@ inline std::error_code make_error_code(zrpc::RPCError e)
 
 namespace msgpack {
 template <>
-inline void Packer::pack_type<zrpc::RPCError>(const zrpc::RPCError& e)
+inline void Packer::pack_type<zrpc::RPCErrorCode>(const zrpc::RPCErrorCode& e)
 {
     pack_type(static_cast<const uint32_t>(e));
 }
 template <>
-inline void Unpacker::unpack_type<zrpc::RPCError>(zrpc::RPCError& e)
+inline void Unpacker::unpack_type<zrpc::RPCErrorCode>(zrpc::RPCErrorCode& e)
 {
     uint32_t u;
     unpack_type(u);
-    e = static_cast<zrpc::RPCError>(u);
+    e = static_cast<zrpc::RPCErrorCode>(u);
 }
 }   // namespace msgpack
 
 namespace fmt {
 template <>
-struct formatter<zrpc::RPCError> {
+struct formatter<zrpc::RPCErrorCode> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
-    auto format(const zrpc::RPCError& ec, format_context& ctx) const
+    auto format(const zrpc::RPCErrorCode& ec, format_context& ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", magic_enum::enum_name(ec));
     }
@@ -73,7 +88,7 @@ struct formatter<zrpc::RPCError> {
 
 namespace std {
 template <>
-struct is_error_code_enum<zrpc::RPCError> : public true_type {};
+struct is_error_code_enum<zrpc::RPCErrorCode> : public true_type {};
 }   // namespace std
 
 namespace zrpc {
@@ -137,20 +152,6 @@ struct Serde {
         try {
             msgpack::Unpacker unpacker(static_cast<const uint8_t*>(req.data()),
                                        static_cast<const size_t>(req.size()));
-
-#if 0 
-            auto process = [&](auto& arg) {
-                using T = std::remove_reference_t<decltype(arg)>;
-                if constexpr (std::is_enum_v<T>) {
-                    typename std::underlying_type<T>::type tmp;
-                    unpacker.process(tmp);
-                    arg = static_cast<T>(tmp);
-                } else {
-                    unpacker.process(arg);
-                }
-            };
-            (process(args), ...);
-#endif
             (process_one(unpacker, args), ...);
             return {};
         } catch (std::error_code ec) {

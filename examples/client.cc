@@ -56,8 +56,8 @@ int main()
     // error handling
     try {
         cli.call("nonexist");
-    } catch (zrpc::RPCError ec) {
-        spdlog::error("failed: {}", static_cast<uint32_t>(ec));
+    } catch (const zrpc::RPCError& e) {
+        spdlog::error("failed: {}", e.what());
     }
 
     while (cli.poll()) {}

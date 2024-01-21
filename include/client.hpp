@@ -72,24 +72,26 @@ class Client {
         {
             auto resp_result = sock_.recv(resp, zmq::recv_flags::none);
             if constexpr (std::is_void_v<ReturnType>) {
-                RPCError code;
+                RPCErrorCode code;
                 auto ec = SerdeT::deserialize(resp, code);
-                if (code != RPCError::kNoError) {
-                    spdlog::error(
+                if (code != RPCErrorCode::kNoError) {
+                    auto what = fmt::format(
                         "client call {}{} error: {}", method, std::make_tuple(args...), code);
-                    throw code;
+                    spdlog::error(what);
+                    throw RPCError(code, what);
                 }
                 spdlog::trace("client call {}{} -> void", method, std::make_tuple(args...));
                 return;
             } else {
                 static_assert(std::is_constructible_v<ReturnType>);
-                RPCError code;
+                RPCErrorCode code;
                 ReturnType ret{};
                 auto ec = SerdeT::deserialize(resp, code, ret);
-                if (code != RPCError::kNoError) {
-                    spdlog::error(
+                if (code != RPCErrorCode::kNoError) {
+                    auto what = fmt::format(
                         "client call {}{} error: {}", method, std::make_tuple(args...), code);
-                    throw code;
+                    spdlog::error(what);
+                    throw RPCError(code, what);
                 }
                 spdlog::trace("client call {}{} -> {}", method, std::make_tuple(args...), ret);
                 return ret;
@@ -147,25 +149,27 @@ class Client {
             auto resp_result = sock_.recv(resp, zmq::recv_flags::none);
 
             if constexpr (std::is_void_v<ReturnType>) {
-                RPCError code;
+                RPCErrorCode code;
                 auto ec = SerdeT::deserialize(resp, code);
-                if (code != RPCError::kNoError) {
-                    spdlog::error(
+                if (code != RPCErrorCode::kNoError) {
+                    auto what = fmt::format(
                         "client call {}{} error: {}", method, std::make_tuple(args...), code);
-                    throw code;
+                    spdlog::error(what);
+                    throw RPCError(code, what);
                 }
                 spdlog::trace(
                     "client async call[{}] {}{} -> void", token, method, std::make_tuple(args...));
                 return;
             } else {
                 static_assert(std::is_constructible_v<ReturnType>);
-                RPCError code;
+                RPCErrorCode code;
                 ReturnType ret{};
                 auto ec = SerdeT::deserialize(resp, code, ret);
-                if (code != RPCError::kNoError) {
-                    spdlog::error(
+                if (code != RPCErrorCode::kNoError) {
+                    auto what = fmt::format(
                         "client call {}{} error: {}", method, std::make_tuple(args...), code);
-                    throw code;
+                    spdlog::error(what);
+                    throw RPCError(code, what);
                 }
                 spdlog::trace("client async call[{}] {}{} -> {}",
                               token,
