@@ -60,7 +60,7 @@ int main()
         spdlog::error("failed: {}", e.what());
     }
 
-    while (cli.poll()) {}
+    cli.poll();
 
     // std::this_thread::sleep_for(5s);
 }

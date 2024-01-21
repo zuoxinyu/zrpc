@@ -1,6 +1,8 @@
 #ifndef __ZRPC_CLIENT_HPP__
 #define __ZRPC_CLIENT_HPP__
 
+#include <random>
+
 #include "zrpc.hpp"
 
 #include <random>
@@ -48,7 +50,7 @@ class Client {
     // poll style api
     //   - return value: number of pending async operations
     //   - args: `timeout`
-    int poll(std::chrono::milliseconds timeout = -1ms) { return poll_async_sub(timeout); }
+    int poll(std::chrono::milliseconds timeout = -1ms) { return poll_thread(timeout); }
     int poll_event() { return poll_event_sub(-1ms); }
 
     // Calling convention:
@@ -183,7 +185,7 @@ class Client {
 
     // register an event, handler would be invoked on poll thread
     template <typename Callback>
-    inline auto register_event(Event event, Callback fn)
+    inline auto register_event(const Event& event, Callback fn)
     {
         std::lock_guard lock{event_q_lock_};
 
@@ -243,36 +245,54 @@ class Client {
     }
 
     // thread for handling async results and server events
-    int poll_thread()
+    int poll_thread(std::chrono::milliseconds timeout)
     {
         using namespace std::chrono_literals;
         zmq::poller_t<> poller;
         std::vector<zmq::poller_event<>> in_events;
-
         poller.add(async_sub_, zmq::event_flags::pollin);
         poller.add(event_sub_, zmq::event_flags::pollin);
 
+        zmq::pollitem_t items[] = {
+            {async_sub_, 0, ZMQ_POLLIN, 0},
+            {event_sub_, 0, ZMQ_POLLIN, 0},
+        };
+
         while (!stop_) {
-            size_t n;
+            zmq::poll(items, 2, timeout);
+            zmq::message_t msg;
+            if (items[0].revents & ZMQ_POLLIN) {
+                std::ignore = async_sub_.recv(msg, zmq::recv_flags::none);
+                handle_async(msg);
+            }
+            if (items[1].revents & ZMQ_POLLIN) {
+                std::ignore = event_sub_.recv(msg, zmq::recv_flags::none);
+                handle_event(msg);
+            }
+
+            continue;
             try {
-                n = poller.wait_all(in_events, -1ms);
+                size_t n;
+                n = poller.wait_all(in_events, timeout);
+
+                for (size_t i = 0; i < n; i++) {
+                    zmq::message_t msg;
+
+                    auto sock = in_events[i].socket;
+
+                    auto recv_result = sock.recv(msg, zmq::recv_flags::none);
+
+                    if (sock == async_sub_) {
+                        handle_async(msg);
+                    }
+
+                    if (sock == event_sub_) {
+                        handle_event(msg);
+                    }
+                }
             } catch (std::exception& e) {
                 spdlog::error("zmq::poll: {}", e.what());
-            }
-            for (size_t i = 0; i < n; i++) {
-                zmq::message_t msg;
-
-                auto sock = in_events[i].socket;
-
-                auto recv_result = sock.recv(msg, zmq::recv_flags::none);
-
-                if (sock == async_sub_) {
-                    handle_async(msg);
-                }
-
-                if (sock == event_sub_) {
-                    handle_event(msg);
-                }
+                return 1;
             }
         }
         spdlog::trace("poll thread stopped normally");

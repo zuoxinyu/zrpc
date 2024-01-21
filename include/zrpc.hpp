@@ -3,7 +3,6 @@
 #include <functional>
 #include <map>
 #include <type_traits>
-#include <utility>
 
 #include <fmt/ranges.h>
 #include <magic_enum.hpp>

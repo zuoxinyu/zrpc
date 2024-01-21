@@ -84,7 +84,7 @@ struct Bar : public Foo {
 void async_method(std::function<void(int)> cb, int i)
 {
     using namespace std::chrono_literals;
-    auto thread_fn = [cb](int arg) {
+    auto thread_fn = [cb = std::move(cb)](int arg) {
         std::this_thread::sleep_for(3000ms);
         // this line make async callback correctly work, why?
         fmt::println("async method invoking callback: {}", arg);
@@ -96,7 +96,7 @@ void async_method(std::function<void(int)> cb, int i)
 bool async_return_method(std::function<void(int)> cb, int i)
 {
     using namespace std::chrono_literals;
-    auto thread_fn = [cb](int arg) {
+    auto thread_fn = [cb = std::move(cb)](int arg) {
         std::this_thread::sleep_for(3000ms);
         cb(arg);
     };

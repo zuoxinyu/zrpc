@@ -1,9 +1,9 @@
 #ifndef __ZRPC_SERVER_HPP__
 #define __ZRPC_SERVER_HPP__
 
-#include "zrpc.hpp"
-
 #include <nameof.hpp>
+
+#include "zrpc.hpp"
 
 namespace zrpc {
 
