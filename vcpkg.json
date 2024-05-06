@@ -4,8 +4,14 @@
   "description": "A header only RPC framework based on ZeroMQ and messagepack",
   "version": "0.1.0",
   "dependencies": [
-    "zeromq",
-    "cppzmq",
+    {
+      "name": "zeromq",
+      "features": ["draft"]
+    },
+    {
+      "name": "cppzmq",
+      "features": ["draft"]
+    },
     "spdlog",
     "nameof",
     "fmt",

@@ -104,13 +104,14 @@ using AsyncToken = std::string;
 using AsyncHandler = std::function<void(AsyncCallbackArgs)>;
 using AsyncQueue = std::unordered_map<AsyncToken, AsyncHandler>;
 
-static const std::string kEndpoint = "tcp://127.0.0.1:5555";
-static const std::string kAsyncEndpoint = "tcp://127.0.0.1:5556";
-static const std::string kEventEndpoint = "tcp://127.0.0.1:5557";
-static const std::string kAsyncFilter = "";   // FIXME: figure out this strange usage...
-static const std::string kEventFilter = "";
-static const std::string kHandshake = "hello";
-static const std::string kHandshakeReply = "hi";
+static inline const std::string kEndpoint = "tcp://127.0.0.1:5555";
+static inline const std::string kAsyncEndpoint = "tcp://127.0.0.1:5556";
+static inline const std::string kEventEndpoint = "tcp://127.0.0.1:5557";
+static inline const std::string kAsyncFilter = "";   // FIXME: figure out this strange usage...
+static inline const std::string kEventFilter = "";
+static inline const char* kListMethods = "list_methods";
+static inline const char* kHandshake = "hello";
+static inline const char* kHandshakeReply = "hi";
 
 template <typename T, std::enable_if_t<!std::is_enum_v<T>, bool> = true>
 static auto process_one(msgpack::Unpacker& unpacker, T& arg)

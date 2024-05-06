@@ -14,22 +14,24 @@ using detail::fn_traits;
 template <typename SerdeT = Serde>
 class Client {
   public:
-    Client(const std::string& endpoint = kEndpoint)
+    Client(const std::string id = "", const std::string& endpoint = kEndpoint)
+        : identity_(id.empty() ? generate_token() : id)
     {
-        // todo: set metadata
-        // sock_.set(zmq::sockopt::routing_id, identity_);
-        async_sub_.set(zmq::sockopt::subscribe, kAsyncFilter);
-        event_sub_.set(zmq::sockopt::subscribe, kEventFilter);
+        sock_.set(zmq::sockopt::routing_id, identity_);
+        zmq::message_t topic;
+        std::ignore = Serde::serialize(topic, identity_);
+        async_sub_.set(zmq::sockopt::subscribe, topic.to_string());
+        event_sub_.set(zmq::sockopt::subscribe, topic.to_string());
 
         sock_.connect(endpoint);
         async_sub_.connect(kAsyncEndpoint);
         event_sub_.connect(kEventEndpoint);
 
-        // try_handshake();
+        try_handshake();
 
         // poll_thread_ = std::thread(&Client::poll_thread, this);
 
-        spdlog::info("cli connect to {}", kEndpoint);
+        spdlog::info("cli <{}> connect to {}", identity_, endpoint);
     }
 
     Client(Client&) = delete;
@@ -211,18 +213,12 @@ class Client {
     void try_handshake()
     {
         if (!async_sub_connected_) {
-            zmq::message_t msg, req, resp;
+            zmq::message_t msg;
             std::string handshake;
-
+            auto reply = call<std::string>(kHandshake, identity_);
             std::ignore = async_sub_.recv(msg, zmq::recv_flags::none);
             std::ignore = Serde::deserialize(msg, handshake);
-            if (handshake == kHandshake) {
-                std::ignore = Serde::serialize(req, kHandshakeReply);
-                std::ignore = sock_.send(req, zmq::send_flags::none);
-                std::ignore = sock_.recv(resp, zmq::recv_flags::none);
-                std::ignore = resp;
-                async_sub_connected_ = true;
-            }
+            async_sub_connected_ = true;
         }
     }
 
@@ -306,7 +302,7 @@ class Client {
         std::string filter;
 
         auto ec = Serde::deserialize(msg, filter, token);
-        assert(filter == kAsyncFilter);
+        assert(filter == identity_);
 
         std::lock_guard lock{async_q_lock_};
 
@@ -364,28 +360,12 @@ class Client {
         for (i = 0; i < 8; i++) {
             ss << dis(gen);
         }
-        ss << "-";
-        for (i = 0; i < 4; i++) {
-            ss << dis(gen);
-        }
-        ss << "-4";
-        for (i = 0; i < 3; i++) {
-            ss << dis(gen);
-        }
-        ss << "-";
-        ss << dis2(gen);
-        for (i = 0; i < 3; i++) {
-            ss << dis(gen);
-        }
-        ss << "-";
-        for (i = 0; i < 12; i++) {
-            ss << dis(gen);
-        };
         return ss.str();
     }
 
   private:
-    std::string identity_ = generate_token();
+    // identitifies the routing id and the sub topic
+    std::string identity_;
     // (logically) immutable resources
     zmq::context_t ctx_{1};
     // socket for sync RPC calls
