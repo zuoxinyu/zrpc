@@ -19,10 +19,10 @@ int main()
 
     // sync
     cli.call("void_method");
-    std::ignore = cli.call<std::string>("add_string", hello, world);
-    std::ignore = cli.call<int>("add_integer", 1, 2);
-    std::ignore = cli.call<double>("add_double", 3.14, 2.76);
-    std::ignore = cli.call<int>("foo.add1", 2);
+    assert(cli.call<std::string>("add_string", hello, world) == hello + world);
+    assert(cli.call<int>("add_integer", -1, -2) == -1 + -2);
+    assert(cli.call<double>("add_double", 3.14, -2.76) == 3.14 - -2.76);
+    assert(cli.call<int>("foo.add1", 2) == 2 + 1);
     std::ignore = cli.call<int>("bar.virtual_method");
     std::ignore = cli.call<int>("lambda");
     cli.call("default_parameter_fn", 1);
@@ -57,10 +57,11 @@ int main()
     try {
         cli.call("nonexist");
     } catch (const zrpc::RPCError& e) {
-        spdlog::error("failed: {}", e.what());
+        spdlog::info("failed: {}", e.what());
     }
+    cli.call("stop_server");
 
-    cli.poll();
+    // cli.poll();
 
     // std::this_thread::sleep_for(5s);
 }

@@ -396,32 +396,32 @@ inline void Packer::pack_type(const float& value)
     double integral_part;
     auto fractional_remainder = float(modf(value, &integral_part));
 
-    // if (fractional_remainder == 0) { // Just pack as int
-    //     pack_type(int64_t(integral_part));
-    // } else {
-    static_assert(std::numeric_limits<float>::radix == 2);   // TODO: Handle decimal floats
-    auto exponent = ilogb(value);
-    float full_mantissa = value / float(scalbn(1.0, exponent));
-    auto sign_mask = std::bitset<32>(uint32_t(std::signbit(full_mantissa)) << 31);
-    auto excess_127_exponent_mask = std::bitset<32>(uint32_t(exponent + 127) << 23);
-    auto normalized_mantissa_mask = std::bitset<32>();
-    float implied_mantissa = fabs(full_mantissa) - 1.0f;
-    for (auto i = 23U; i > 0; --i) {
-        integral_part = 0;
-        implied_mantissa *= 2;
-        implied_mantissa = float(modf(implied_mantissa, &integral_part));
-        if (uint8_t(integral_part) == 1) {
-            normalized_mantissa_mask |= std::bitset<32>(uint32_t(1 << (i - 1)));
+    if (fractional_remainder == 0) {   // Just pack as int
+        pack_type(int64_t(integral_part));
+    } else {
+        static_assert(std::numeric_limits<float>::radix == 2);   // TODO: Handle decimal floats
+        auto exponent = ilogb(value);
+        float full_mantissa = value / float(scalbn(1.0, exponent));
+        auto sign_mask = std::bitset<32>(uint32_t(std::signbit(full_mantissa)) << 31);
+        auto excess_127_exponent_mask = std::bitset<32>(uint32_t(exponent + 127) << 23);
+        auto normalized_mantissa_mask = std::bitset<32>();
+        float implied_mantissa = fabs(full_mantissa) - 1.0f;
+        for (auto i = 23U; i > 0; --i) {
+            integral_part = 0;
+            implied_mantissa *= 2;
+            implied_mantissa = float(modf(implied_mantissa, &integral_part));
+            if (uint8_t(integral_part) == 1) {
+                normalized_mantissa_mask |= std::bitset<32>(uint32_t(1 << (i - 1)));
+            }
+        }
+
+        uint32_t ieee754_float32 =
+            (sign_mask | excess_127_exponent_mask | normalized_mantissa_mask).to_ulong();
+        serialized_object.emplace_back(float32);
+        for (auto i = sizeof(uint32_t); i > 0; --i) {
+            serialized_object.emplace_back(uint8_t(ieee754_float32 >> (8U * (i - 1)) & 0xff));
         }
     }
-
-    uint32_t ieee754_float32 =
-        (sign_mask | excess_127_exponent_mask | normalized_mantissa_mask).to_ulong();
-    serialized_object.emplace_back(float32);
-    for (auto i = sizeof(uint32_t); i > 0; --i) {
-        serialized_object.emplace_back(uint8_t(ieee754_float32 >> (8U * (i - 1)) & 0xff));
-    }
-    // }
 }
 
 template <>
@@ -430,32 +430,32 @@ inline void Packer::pack_type(const double& value)
     double integral_part;
     double fractional_remainder = modf(value, &integral_part);
 
-    // if (fractional_remainder == 0) {   // Just pack as int
-    //     pack_type(int64_t(integral_part));
-    // } else {
-    static_assert(std::numeric_limits<float>::radix == 2);   // TODO: Handle decimal floats
-    auto exponent = ilogb(value);
-    double full_mantissa = value / scalbn(1.0, exponent);
-    auto sign_mask = std::bitset<64>(uint64_t(std::signbit(full_mantissa)) << 63);
-    auto excess_127_exponent_mask = std::bitset<64>(uint64_t(exponent + 1023) << 52);
-    auto normalized_mantissa_mask = std::bitset<64>();
-    double implied_mantissa = fabs(full_mantissa) - 1.0f;
+    if (fractional_remainder == 0) {   // Just pack as int
+        pack_type(int64_t(integral_part));
+    } else {
+        static_assert(std::numeric_limits<float>::radix == 2);   // TODO: Handle decimal floats
+        auto exponent = ilogb(value);
+        double full_mantissa = value / scalbn(1.0, exponent);
+        auto sign_mask = std::bitset<64>(uint64_t(std::signbit(full_mantissa)) << 63);
+        auto excess_127_exponent_mask = std::bitset<64>(uint64_t(exponent + 1023) << 52);
+        auto normalized_mantissa_mask = std::bitset<64>();
+        double implied_mantissa = fabs(full_mantissa) - 1.0f;
 
-    for (auto i = 52U; i > 0; --i) {
-        integral_part = 0;
-        implied_mantissa *= 2;
-        implied_mantissa = modf(implied_mantissa, &integral_part);
-        if (uint8_t(integral_part) == 1) {
-            normalized_mantissa_mask |= std::bitset<64>(uint64_t(1) << (i - 1));
+        for (auto i = 52U; i > 0; --i) {
+            integral_part = 0;
+            implied_mantissa *= 2;
+            implied_mantissa = modf(implied_mantissa, &integral_part);
+            if (uint8_t(integral_part) == 1) {
+                normalized_mantissa_mask |= std::bitset<64>(uint64_t(1) << (i - 1));
+            }
+        }
+        auto ieee754_float64 =
+            (sign_mask | excess_127_exponent_mask | normalized_mantissa_mask).to_ullong();
+        serialized_object.emplace_back(float64);
+        for (auto i = sizeof(ieee754_float64); i > 0; --i) {
+            serialized_object.emplace_back(uint8_t(ieee754_float64 >> (8U * (i - 1)) & 0xff));
         }
     }
-    auto ieee754_float64 =
-        (sign_mask | excess_127_exponent_mask | normalized_mantissa_mask).to_ullong();
-    serialized_object.emplace_back(float64);
-    for (auto i = sizeof(ieee754_float64); i > 0; --i) {
-        serialized_object.emplace_back(uint8_t(ieee754_float64 >> (8U * (i - 1)) & 0xff));
-    }
-    // }
 }
 
 template <>
@@ -512,11 +512,11 @@ class Unpacker {
   public:
     Unpacker()
         : data_pointer(nullptr)
-        , data_end(nullptr){};
+        , data_end(nullptr) {};
 
     Unpacker(const uint8_t* data_start, std::size_t bytes)
         : data_pointer(data_start)
-        , data_end(data_start + bytes){};
+        , data_end(data_start + bytes) {};
 
     template <class... Types>
     void operator()(Types&... args)
@@ -693,7 +693,8 @@ inline void Unpacker::unpack_type(int8_t& value)
         value = safe_data();
         safe_increment();
     } else {
-        value = safe_data();
+        uint8_t bits = safe_data();
+        value = *reinterpret_cast<int8_t*>(&bits);
         safe_increment();
     }
 }
@@ -718,7 +719,8 @@ inline void Unpacker::unpack_type(int16_t& value)
         unpack_type(val);
         value = val;
     } else {
-        value = safe_data();
+        uint8_t bits = safe_data();
+        value = *reinterpret_cast<int8_t*>(&bits);
         safe_increment();
     }
 }
@@ -747,7 +749,8 @@ inline void Unpacker::unpack_type(int32_t& value)
         unpack_type(val);
         value = val;
     } else {
-        value = safe_data();
+        uint8_t bits = safe_data();
+        value = *reinterpret_cast<int8_t*>(&bits);
         safe_increment();
     }
 }
@@ -780,7 +783,8 @@ inline void Unpacker::unpack_type(int64_t& value)
         unpack_type(val);
         value = val;
     } else {
-        value = safe_data();
+        uint8_t bits = safe_data();
+        value = *reinterpret_cast<int8_t*>(&bits);
         safe_increment();
     }
 }

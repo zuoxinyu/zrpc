@@ -3,10 +3,40 @@
 #include <magic_enum.hpp>
 #include <spdlog/spdlog.h>
 
+#include "client.hpp"
 #include "server.hpp"
 #include "types.h"
 
+#include <Windows.h>
+
 using namespace std::chrono_literals;
+
+BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
+{
+    switch (fdwCtrlType) {
+    // Handle the CTRL-C signal.
+    case CTRL_C_EVENT: {
+        spdlog::info("Ctrl-C received, exiting...");
+        zrpc::Client cli;
+        cli.call("stop_server");
+        return TRUE;
+    }
+    // CTRL-CLOSE: confirm that the user wants to exit.
+    case CTRL_CLOSE_EVENT:
+        spdlog::info("Ctrl-Close received, exiting...");
+        return TRUE;
+
+        // Pass other signals to the next handler.
+    case CTRL_BREAK_EVENT: printf("Ctrl-Break event\n\n"); return FALSE;
+
+    case CTRL_LOGOFF_EVENT: printf("Ctrl-Logoff event\n\n"); return FALSE;
+
+    case CTRL_SHUTDOWN_EVENT: printf("Ctrl-Shutdown event\n\n"); return FALSE;
+
+    default: return FALSE;
+    }
+}
+
 
 bool test_method(int a, std::string s)
 {
@@ -111,6 +141,7 @@ Pod construct_pod(int i, uint8_t c, float f, double d)
 
 int main()
 {
+    SetConsoleCtrlHandler(CtrlHandler, TRUE);
     spdlog::set_level(spdlog::level::trace);
 
     zrpc::Server svr;
@@ -140,6 +171,10 @@ int main()
         using namespace std::chrono_literals;
         std::this_thread::sleep_for(100ms);
         svr.publish_event("event1", std::string("event with string"), 10);
+    });
+    svr.register_method("stop_server", [&] {
+        svr.stop();
+        fmt::println("server stopped");
     });
 
     svr.serve();
