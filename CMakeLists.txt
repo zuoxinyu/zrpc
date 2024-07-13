@@ -29,8 +29,12 @@ if (BUILD_EXAMPLES)
     add_executable(server examples/server.cc)
     target_include_directories(server PRIVATE include)
     target_link_libraries(server ${LIBS})
-    
+
     add_executable(client examples/client.cc)
     target_include_directories(client PRIVATE include)
     target_link_libraries(client ${LIBS})
+
+    add_executable(msgpack_test examples/msgpack_test.cc)
+    target_include_directories(msgpack_test PRIVATE include)
+    target_link_libraries(msgpack_test ${LIBS})
 endif()

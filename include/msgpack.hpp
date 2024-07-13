@@ -399,6 +399,7 @@ inline void Packer::pack_type(const float& value)
     if (fractional_remainder == 0) {   // Just pack as int
         pack_type(int64_t(integral_part));
     } else {
+        // FIXME: subnormal numbers and inf/NaN
         static_assert(std::numeric_limits<float>::radix == 2);   // TODO: Handle decimal floats
         auto exponent = ilogb(value);
         float full_mantissa = value / float(scalbn(1.0, exponent));
@@ -911,7 +912,7 @@ inline void Unpacker::unpack_type(float& value)
         if (bits[31]) {
             mantissa *= -1;
         }
-        uint8_t exponent = 0;
+        int32_t exponent = 0;
         for (auto i = 0U; i < 8; ++i) {
             exponent += bits[i + 23] << i;
         }
@@ -924,7 +925,7 @@ inline void Unpacker::unpack_type(float& value)
             unpack_type(val);
             value = float(val);
         } else {
-            uint64_t val = 0;
+            int64_t val = 0;
             unpack_type(val);
             value = float(val);
         }
@@ -951,7 +952,7 @@ inline void Unpacker::unpack_type(double& value)
         if (bits[63]) {
             mantissa *= -1;
         }
-        uint16_t exponent = 0;
+        int32_t exponent = 0;
         for (auto i = 0U; i < 11; ++i) {
             exponent += bits[i + 52] << i;
         }
@@ -964,7 +965,7 @@ inline void Unpacker::unpack_type(double& value)
             unpack_type(val);
             value = float(val);
         } else {
-            uint64_t val = 0;
+            int64_t val = 0;
             unpack_type(val);
             value = float(val);
         }

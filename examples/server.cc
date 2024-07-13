@@ -7,10 +7,13 @@
 #include "server.hpp"
 #include "types.h"
 
+#ifdef _WIN32
 #include <Windows.h>
+#endif
 
 using namespace std::chrono_literals;
 
+#ifdef _WIN32
 BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
 {
     switch (fdwCtrlType) {
@@ -36,7 +39,7 @@ BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
     default: return FALSE;
     }
 }
-
+#endif
 
 bool test_method(int a, std::string s)
 {
@@ -141,7 +144,9 @@ Pod construct_pod(int i, uint8_t c, float f, double d)
 
 int main()
 {
+#ifdef _WIN32
     SetConsoleCtrlHandler(CtrlHandler, TRUE);
+#endif
     spdlog::set_level(spdlog::level::trace);
 
     zrpc::Server svr;
